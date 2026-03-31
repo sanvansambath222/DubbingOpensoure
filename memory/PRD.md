@@ -60,7 +60,7 @@ Build Dubbing China to Khmer using python website following top trending design 
 - [x] Batch export (MP3 + MP4 + SRT all at once)
 - [x] Search in segments
 - [x] Browser notification when processing done
-- [x] Voice Pitch slider (-6 to +6 semitones) for older/deeper or younger/higher voice
+- [x] Voice Pitch slider (-6 to +6 semitones) **per actor** for older/deeper or younger/higher voice
 - [x] FFmpeg pitch post-processing on TTS audio (preview + full generation)
 
 ## Prioritized Backlog

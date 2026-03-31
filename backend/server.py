@@ -807,7 +807,7 @@ async def preview_tts(project_id: str, req: PreviewRequest, authorization: str =
 
 # Generate timestamp-aligned audio
 @api_router.post("/projects/{project_id}/generate-audio-segments")
-async def generate_audio_segments(project_id: str, speed: int = Query(2), pitch: int = Query(0), authorization: str = Header(None)):
+async def generate_audio_segments(project_id: str, speed: int = Query(2), authorization: str = Header(None)):
     import requests as req
     import time
     import io
@@ -881,10 +881,12 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), pitch:
             import edge_tts
             speaker = seg.get("speaker", "")
             seg_gender = seg.get("gender", "female")
-            # Check actor gender
+            actor_pitch = 0
+            # Check actor gender and pitch
             for a in actors:
                 if a["id"] == speaker:
                     seg_gender = a.get("gender", seg_gender)
+                    actor_pitch = a.get("pitch", 0)
                     break
             
             edge_voice = "km-KH-PisethNeural" if seg_gender == "male" else "km-KH-SreymomNeural"
@@ -894,9 +896,9 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), pitch:
                 pitched_path = os.path.join(tempfile.gettempdir(), f"tts_pitched_{uuid.uuid4().hex}.mp3")
                 communicate = edge_tts.Communicate(seg["translated"], voice=edge_voice, rate=f"+{speed}%" if speed >= 0 else f"{speed}%")
                 await communicate.save(tts_path)
-                # Apply pitch adjustment
-                if pitch != 0:
-                    adjust_pitch(tts_path, pitched_path, pitch)
+                # Apply per-actor pitch adjustment
+                if actor_pitch != 0:
+                    adjust_pitch(tts_path, pitched_path, actor_pitch)
                     audio_seg = AudioSegment.from_file(pitched_path, format="mp3")
                     os.unlink(pitched_path)
                 else:
