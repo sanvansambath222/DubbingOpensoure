@@ -717,55 +717,27 @@ async def generate_audio_segments(project_id: str, authorization: str = Header(N
             if not seg.get("translated"):
                 continue
 
-            # Use Gemini TTS
+            # Use Edge TTS for Khmer (free, real Khmer pronunciation)
+            import edge_tts
             speaker = seg.get("speaker", "")
-            voice_name = actor_ai_voice_map.get(speaker, seg.get("voice", "sophea"))
-            gemini_voice = voice_map.get(voice_name, "Puck")
-
-            payload = {
-                "contents": [{"parts": [{"text": seg["translated"]}]}],
-                "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "speechConfig": {
-                        "voiceConfig": {
-                            "prebuiltVoiceConfig": {"voiceName": gemini_voice}
-                        }
-                    }
-                }
-            }
-
-            response = req.post(
-                f"{TTS_URL}?key={GOOGLE_TTS_KEY}",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=60
-            )
-            response.raise_for_status()
-            result = response.json()
-
-            audio_b64 = result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
-            import base64
-            pcm_data = base64.b64decode(audio_b64)
-
-            # Convert PCM to WAV using ffmpeg
-            with tempfile.NamedTemporaryFile(suffix=".pcm", delete=False) as pcm_f:
-                pcm_f.write(pcm_data)
-                pcm_path = pcm_f.name
-            wav_path = pcm_path.replace(".pcm", ".wav")
-            subprocess.run([
-                "ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
-                "-i", pcm_path, wav_path
-            ], capture_output=True)
+            seg_gender = seg.get("gender", "female")
+            # Check actor gender
+            for a in actors:
+                if a["id"] == speaker:
+                    seg_gender = a.get("gender", seg_gender)
+                    break
             
-            audio_seg = AudioSegment.from_file(wav_path, format="wav")
-            segment_audio_pairs.append((seg, audio_seg))
+            edge_voice = "km-KH-PisethNeural" if seg_gender == "male" else "km-KH-SreymomNeural"
             
-            # Cleanup temp files
             try:
-                os.unlink(pcm_path)
-                os.unlink(wav_path)
-            except Exception:
-                pass
+                tts_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.mp3")
+                communicate = edge_tts.Communicate(seg["translated"], voice=edge_voice)
+                await communicate.save(tts_path)
+                audio_seg = AudioSegment.from_file(tts_path, format="mp3")
+                segment_audio_pairs.append((seg, audio_seg))
+                os.unlink(tts_path)
+            except Exception as e:
+                logger.warning(f"Edge TTS failed for segment: {e}")
 
         if not segment_audio_pairs:
             raise Exception("No audio generated")

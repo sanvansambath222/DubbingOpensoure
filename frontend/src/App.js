@@ -314,12 +314,10 @@ const Editor = () => {
   const originalVideoRef = useRef(null);
 
   const femaleVoices = [
-    { id: "sophea", name: "Sophea" }, { id: "chanthy", name: "Chanthy" },
-    { id: "bopha", name: "Bopha" }, { id: "srey", name: "Srey" }
+    { id: "sophea", name: "Sreymom (Girl)" }
   ];
   const maleVoices = [
-    { id: "dara", name: "Dara" }, { id: "virak", name: "Virak" },
-    { id: "sokha", name: "Sokha" }, { id: "pich", name: "Pich" }
+    { id: "dara", name: "Piseth (Boy)" }
   ];
 
   const getCurrentStep = () => {
