@@ -1103,7 +1103,7 @@ const Editor = () => {
                             <span className="text-[9px] text-slate-500 font-semibold">Voice Age</span>
                             <div className="flex items-center gap-1">
                               <input type="number" min={5} max={80}
-                                defaultValue={Math.round(30 - (actor.pitch || 0) * 5)}
+                                defaultValue={actor.age ? parseInt(actor.age) || 30 : Math.round(30 - (actor.pitch || 0) * 5)}
                                 onBlur={(e) => {
                                   const age = Math.max(5, Math.min(80, Number(e.target.value) || 30));
                                   const pitch = Math.round((30 - age) / 5);

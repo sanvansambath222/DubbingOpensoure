@@ -713,12 +713,22 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
                 else:
                     label = gender_tag
                 
+                # Auto-set pitch from detected age
+                auto_pitch = 0
+                if age:
+                    try:
+                        age_num = int(''.join(c for c in age if c.isdigit()) or '30')
+                        auto_pitch = max(-6, min(6, round((30 - age_num) / 5)))
+                    except:
+                        auto_pitch = 0
+                
                 actors.append({
                     "id": spk,
                     "label": label,
                     "gender": info["gender"],
                     "role": role,
                     "age": age,
+                    "pitch": auto_pitch,
                     "voice": "dara" if info["gender"] == "male" else "sophea",
                     "custom_voice": None,
                     "total_speaking_time": round(info["total_time"], 1),
