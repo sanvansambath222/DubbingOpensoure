@@ -58,6 +58,13 @@ def get_object(path: str) -> tuple:
     }
     return data, content_types.get(ext, "application/octet-stream")
 
+
+def delete_object(path: str):
+    """Delete a file from local storage."""
+    file_path = LOCAL_STORAGE_DIR / path
+    if file_path.exists():
+        file_path.unlink()
+
 def get_file_type(filename: str) -> str:
     ext = filename.lower().split('.')[-1] if '.' in filename else ''
     if ext in ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv']:
@@ -1378,6 +1385,44 @@ if os.path.isdir(FRONTEND_BUILD):
 @app.on_event("startup")
 async def startup():
     logger.info("Storage initialized (local)")
+    # Start auto-cleanup background task
+    asyncio.create_task(auto_cleanup_old_projects())
+
+
+async def auto_cleanup_old_projects():
+    """Delete projects older than 30 days (trial users). Runs every 6 hours."""
+    CLEANUP_INTERVAL_HOURS = 6
+    PROJECT_MAX_AGE_DAYS = 30
+    while True:
+        try:
+            await asyncio.sleep(CLEANUP_INTERVAL_HOURS * 3600)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=PROJECT_MAX_AGE_DAYS)
+            cutoff_str = cutoff.isoformat()
+
+            old_projects = await db.projects.find(
+                {"created_at": {"$lt": cutoff_str}},
+                {"_id": 0, "project_id": 1, "user_id": 1, "title": 1, "original_file_path": 1, "dubbed_audio_path": 1, "dubbed_video_path": 1}
+            ).to_list(length=500)
+
+            deleted_count = 0
+            for project in old_projects:
+                # Delete stored files
+                for key in ["original_file_path", "dubbed_audio_path", "dubbed_video_path"]:
+                    file_path = project.get(key)
+                    if file_path:
+                        try:
+                            delete_object(file_path)
+                        except Exception:
+                            pass
+                # Delete project from DB
+                await db.projects.delete_one({"project_id": project["project_id"]})
+                deleted_count += 1
+
+            if deleted_count > 0:
+                logger.info(f"Auto-cleanup: deleted {deleted_count} projects older than {PROJECT_MAX_AGE_DAYS} days")
+        except Exception as e:
+            logger.error(f"Auto-cleanup error: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
