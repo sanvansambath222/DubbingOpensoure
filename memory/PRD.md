@@ -62,6 +62,8 @@ Build Dubbing China to Khmer using python website following top trending design 
 - [x] Browser notification when processing done
 - [x] Voice Pitch slider (-6 to +6 semitones) **per actor** for older/deeper or younger/higher voice
 - [x] FFmpeg pitch post-processing on TTS audio (preview + full generation)
+- [x] GPT auto-detects actor **age** (~20s, ~30s, ~40s, etc.) and **role** (Narrator, Boss, Wife) from dialogue
+- [x] Actor cards show role badge and age badge
 
 ## Prioritized Backlog
 

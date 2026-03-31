@@ -590,7 +590,7 @@ async def transcribe_segments(project_id: str, authorization: str = Header(None)
                 detect_chat = LlmChat(
                     api_key=EMERGENT_LLM_KEY,
                     session_id=f"detect_{project_id}_{uuid.uuid4().hex[:6]}",
-                    system_message="""You analyze Chinese video dialogue to identify speakers and their GENDER.
+                    system_message="""You analyze video dialogue to identify speakers, their GENDER, ROLE, and estimated AGE.
 
 CRITICAL GENDER RULES:
 - Characters with titles 爷/哥/先生/老板/少爷/大哥 = MALE
@@ -600,7 +600,7 @@ CRITICAL GENDER RULES:
 - 姐姐 = FEMALE (older sister)
 - 九爷 = MALE, 少爷 = MALE
 - Aggressive/commanding speech (滚/找死/给我滚/狗东西) = usually MALE
-- Most Chinese drama conversations have BOTH male AND female characters
+- Most drama conversations have BOTH male AND female characters
 - If unsure about gender, look at HOW they speak: commanding/rough = male, gentle/polite = could be either
 
 SPEAKER GROUPING:
@@ -609,11 +609,25 @@ SPEAKER GROUPING:
 - Same person consecutive lines = same ID
 - When someone is ADDRESSED by title, the REPLY is a different person
 
-IMPORTANT: You MUST identify at least some speakers as "male" if the dialogue contains male characters. Do NOT mark everyone as female.
+AGE ESTIMATION:
+- Look at how the character speaks and their role
+- 爷/奶奶/老 = elderly (60+)
+- 叔/阿姨/太太/老板 = middle age (35-55)
+- 哥/姐/先生/女士 = adult (25-40)
+- 弟弟/妹妹/小 = young (15-25)
+- Narrators/voiceover = adult (25-35) unless obvious
+- If character name is given (e.g. 杜清禾), estimate from context
+
+ROLE DETECTION:
+- Identify the character's role: Narrator, Boss, Wife, Doctor, Student, etc.
+- If character has a proper name, use that name as role
+- 旁白/自述 = Narrator
+
+IMPORTANT: You MUST identify at least some speakers as "male" if the dialogue contains male characters.
 
 Return ONLY JSON array:
-[{"idx": 0, "speaker": "SPEAKER_00", "gender": "male", "role": "Boss"}, ...]
-Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male" or "female"."""
+[{"idx": 0, "speaker": "SPEAKER_00", "gender": "male", "role": "Boss", "age": "40s"}, ...]
+Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male" or "female". age should be like "20s", "30s", "40s", "50s", "60s" etc."""
                 )
                 detect_chat.with_model("openai", "gpt-5.2")
                 
@@ -638,11 +652,14 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
                                 gender = d.get("gender", "female")
                                 speaker = d.get("speaker", "SPEAKER_00")
                                 role = d.get("role", "")
+                                age = d.get("age", "")
                                 segments[idx]["gender"] = gender
                                 segments[idx]["speaker"] = speaker
                                 segments[idx]["voice"] = "dara" if gender == "male" else "sophea"
                                 if role:
                                     segments[idx]["role"] = role
+                                if age:
+                                    segments[idx]["age"] = age
                         
                         # Verify: count unique speakers detected
                         unique_speakers = set(s["speaker"] for s in segments)
@@ -659,6 +676,7 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
             # Build actors from unique speakers with speaking time ranges
             speaker_info = {}
             speaker_roles = {}
+            speaker_ages = {}
             for seg in segments:
                 spk = seg.get("speaker", "SPEAKER_00")
                 if spk not in speaker_info:
@@ -669,9 +687,10 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
                         "total_time": 0,
                         "line_count": 0
                     }
-                # Capture the role from the first segment that has one
                 if spk not in speaker_roles and seg.get("role"):
                     speaker_roles[spk] = seg["role"]
+                if spk not in speaker_ages and seg.get("age"):
+                    speaker_ages[spk] = seg["age"]
                 info = speaker_info[spk]
                 info["last_end"] = max(info["last_end"], seg.get("end", 0))
                 info["first_start"] = min(info["first_start"], seg.get("start", 0))
@@ -681,9 +700,15 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
             actors = []
             for spk, info in speaker_info.items():
                 role = speaker_roles.get(spk, "")
+                age = speaker_ages.get(spk, "")
                 gender_tag = "Boy" if info["gender"] == "male" else "Girl"
-                if role:
+                # Build label: Role (Gender, Age)
+                if role and age:
+                    label = f"{role} ({gender_tag}, ~{age})"
+                elif role:
                     label = f"{role} ({gender_tag})"
+                elif age:
+                    label = f"{gender_tag} (~{age})"
                 else:
                     label = gender_tag
                 
@@ -691,6 +716,8 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
                     "id": spk,
                     "label": label,
                     "gender": info["gender"],
+                    "role": role,
+                    "age": age,
                     "voice": "dara" if info["gender"] == "male" else "sophea",
                     "custom_voice": None,
                     "total_speaking_time": round(info["total_time"], 1),

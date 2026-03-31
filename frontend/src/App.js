@@ -1048,12 +1048,24 @@ const Editor = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-white font-medium text-xs truncate">{actor.label || actor.id}</p>
-                          <select data-testid={`actor-gender-${actor.id}`} value={actor.gender || 'female'}
-                            onChange={(e) => updateActor(actor.id, 'gender', e.target.value)}
-                            className={`bg-transparent text-[10px] font-semibold border-none outline-none cursor-pointer ${isMale ? 'text-blue-400' : 'text-pink-400'}`}>
-                            <option value="female">Girl</option>
-                            <option value="male">Boy</option>
-                          </select>
+                          <div className="flex items-center gap-1.5">
+                            <select data-testid={`actor-gender-${actor.id}`} value={actor.gender || 'female'}
+                              onChange={(e) => updateActor(actor.id, 'gender', e.target.value)}
+                              className={`bg-transparent text-[10px] font-semibold border-none outline-none cursor-pointer ${isMale ? 'text-blue-400' : 'text-pink-400'}`}>
+                              <option value="female">Girl</option>
+                              <option value="male">Boy</option>
+                            </select>
+                            {actor.age && (
+                              <span className="text-[9px] text-slate-500 bg-white/[0.04] px-1.5 py-0.5 rounded" data-testid={`actor-age-${actor.id}`}>
+                                ~{actor.age}
+                              </span>
+                            )}
+                            {actor.role && (
+                              <span className="text-[9px] text-cyan-400/60 bg-cyan-500/5 px-1.5 py-0.5 rounded" data-testid={`actor-role-${actor.id}`}>
+                                {actor.role}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
