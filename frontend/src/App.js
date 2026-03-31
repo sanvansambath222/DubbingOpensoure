@@ -759,23 +759,44 @@ const Editor = () => {
                           </div>
                         )}
 
-                        {/* Download Script TXT */}
+                        {/* Download Script TXT - Paged for long videos */}
                         {actorSegs.length > 0 && (
                           <button data-testid={`actor-download-script-${actor.id}`}
                             onClick={() => {
-                              const lines = actorSegs.map((s, i) => {
-                                const len = ((s.end || 0) - (s.start || 0)).toFixed(1);
-                                const text = s.translated || s.original || '(no text)';
-                                return `Line ${i + 1} [${len}s]:\n${text}\n`;
-                              });
-                              const header = `=== ${actor.label || actor.id} Script ===\nTotal: ${segCount} lines, ${totalLen < 60 ? totalLen.toFixed(1) + 's' : Math.floor(totalLen / 60) + 'm ' + Math.round(totalLen % 60) + 's'}\n\n`;
-                              const blob = new Blob([header + lines.join('\n')], { type: 'text/plain' });
+                              const LINES_PER_PAGE = 15;
+                              const totalPages = Math.ceil(actorSegs.length / LINES_PER_PAGE);
+                              const fmtTime = (s) => { const m = Math.floor(s / 60); const sec = Math.round(s % 60); return m > 0 ? `${m}:${String(sec).padStart(2,'0')}` : `0:${String(sec).padStart(2,'0')}`; };
+                              const fmtDur = (t) => t < 60 ? `${t.toFixed(0)}s` : `${Math.floor(t / 60)}m ${Math.round(t % 60)}s`;
+
+                              let output = `========================================\n`;
+                              output += `  ${actor.label || actor.id} - Full Script\n`;
+                              output += `  Total: ${segCount} lines, ${fmtDur(totalLen)}\n`;
+                              output += `========================================\n\n`;
+
+                              for (let page = 0; page < totalPages; page++) {
+                                const start = page * LINES_PER_PAGE;
+                                const end = Math.min(start + LINES_PER_PAGE, actorSegs.length);
+                                const pageSegs = actorSegs.slice(start, end);
+                                const pageTime = pageSegs.reduce((sum, s) => sum + ((s.end || 0) - (s.start || 0)), 0);
+
+                                output += `--- Page ${page + 1} of ${totalPages} (${fmtDur(pageTime)}) ---\n\n`;
+
+                                pageSegs.forEach((s, i) => {
+                                  const text = s.translated || s.original || '(no text)';
+                                  const dur = ((s.end || 0) - (s.start || 0)).toFixed(1);
+                                  output += `${fmtTime(s.start || 0)} [${dur}s]  ${text}\n\n`;
+                                });
+
+                                output += `\n`;
+                              }
+
+                              const blob = new Blob([output], { type: 'text/plain' });
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a'); a.href = url; a.download = `${(actor.label || actor.id).replace(/\s/g, '_')}_script.txt`; a.click();
                               URL.revokeObjectURL(url);
                             }}
                             className="w-full flex items-center justify-center gap-1 px-2 py-1 text-[9px] text-slate-400 hover:text-white border border-white/[0.04] hover:border-white/10 rounded-md transition-colors mt-1">
-                            <Download className="w-2.5 h-2.5" /> Download Script (.txt)
+                            <Download className="w-2.5 h-2.5" /> Script ({Math.ceil(actorSegs.length / 15)} pages)
                           </button>
                         )}
                       </div>
