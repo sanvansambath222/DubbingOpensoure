@@ -10,24 +10,22 @@ Khmer, Thai, Vietnamese, Korean, Japanese, English, Chinese, Indonesian, Hindi, 
 - [x] Google OAuth login, Project CRUD, upload
 - [x] Whisper transcription (auto-detect language)
 - [x] GPT-5.2 translation to ANY of 20 languages
-- [x] Edge TTS voices (male+female per language, free)
-- [x] Per-actor voice, pitch, age detection
-- [x] Custom voice upload + recording
+- [x] Edge TTS voices (male+female per language, free, original voice - no pitch)
+- [x] Per-actor voice, custom voice upload + recording
 - [x] Video dubbing, SRT, MP3, batch export, share link
 - [x] Parallel TTS (5 at a time), auto-process, queue
 - [x] Swiss Light/Dark Theme UI
 - [x] Compact actor cards with Boy/Girl distinction
-- [x] **Chunked translation** (50 segments per batch for long videos)
-- [x] **Real-time progress bar** (segments done, %, elapsed, ETA)
-- [x] **Output language selector** (20 languages in dropdown)
+- [x] Chunked translation (50 segments per batch for long videos)
+- [x] Real-time progress bar (segments done, %, elapsed, ETA)
+- [x] Output language selector (20 languages in dropdown)
+- [x] Code quality refactor (extracted helpers, sessionStorage, named constants, no hardcoded secrets)
 
-## Key Technical Notes
-- DO NOT re-add SSML/Emotion TTS
-- EDGE_TTS_VOICES dict in server.py maps lang->gender->voice
-- target_language stored in project doc, defaults to "km"
-- Translation chunks: 50 segments per GPT call
-- Progress tracked via queue_status dict, polled every 1.5s
-- /api/languages endpoint REMOVED (languages in frontend only)
+## Code Architecture (Post-Refactor)
+- **Backend helpers**: `merge_whisper_segments()`, `build_actors_from_segments()`, `apply_speaker_detections()`, `apply_fallback_speakers()`, `get_media_duration_safe()`, `separate_custom_and_tts_segments()`, `mix_audio_timeline()`
+- **Constants**: `TTS_BATCH_SIZE`, `TRANSLATE_CHUNK_SIZE`, `POLL_INTERVAL_S`
+- **Auth tokens**: sessionStorage (not localStorage)
+- **Test files**: Use env vars via conftest.py fixtures
 
 ## Backlog
 ### P2
@@ -36,6 +34,7 @@ Khmer, Thai, Vietnamese, Korean, Japanese, English, Chinese, Indonesian, Hindi, 
 - [ ] Drag to adjust timing
 - [ ] Export different video quality
 - [ ] Mobile friendly layout
+- [ ] Split App.js into component files
 
 ### P3
 - [ ] Team workspace

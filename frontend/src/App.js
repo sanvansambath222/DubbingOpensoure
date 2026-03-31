@@ -18,6 +18,13 @@ import {
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+// Named constants
+const UPLOAD_TIMEOUT_MS = 300000;
+const GENERATE_TIMEOUT_MS = 300000;
+const AUTO_PROCESS_TIMEOUT_MS = 600000;
+const AUTOSAVE_DELAY_MS = 2000;
+const PROGRESS_POLL_MS = 1500;
+
 // Theme helper: returns dark or light class
 const tc = (isDark, light, dark) => isDark ? dark : light;
 
@@ -38,19 +45,20 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem("session_token"));
+  const [token, setToken] = useState(sessionStorage.getItem("session_token"));
   const [isDark, setIsDark] = useState(() => localStorage.getItem("theme") === "dark");
 
   const checkAuth = useCallback(async () => {
     if (window.location.hash?.includes('session_id=')) { setLoading(false); return; }
-    const savedToken = localStorage.getItem("session_token");
+    const savedToken = sessionStorage.getItem("session_token");
     if (!savedToken) { setLoading(false); return; }
     try {
       const response = await axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${savedToken}` } });
       setUser(response.data);
       setToken(savedToken);
-    } catch {
-      localStorage.removeItem("session_token");
+    } catch (err) {
+      console.warn("Auth check failed:", err.message);
+      sessionStorage.removeItem("session_token");
       setToken(null);
       setUser(null);
     } finally { setLoading(false); }
@@ -66,12 +74,16 @@ export const AuthProvider = ({ children }) => {
   const toggleTheme = () => setIsDark(prev => !prev);
   const login = (userData, sessionToken) => {
     setUser(userData); setToken(sessionToken);
-    localStorage.setItem("session_token", sessionToken);
+    sessionStorage.setItem("session_token", sessionToken);
   };
 
   const logout = async () => {
-    try { await axios.post(`${API}/auth/logout`, {}, { headers: { Authorization: `Bearer ${token}` } }); } catch {}
-    localStorage.removeItem("session_token"); setUser(null); setToken(null);
+    try {
+      await axios.post(`${API}/auth/logout`, {}, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (err) {
+      console.warn("Logout request failed:", err.message);
+    }
+    sessionStorage.removeItem("session_token"); setUser(null); setToken(null);
   };
 
   return (
@@ -158,7 +170,7 @@ const LandingPage = () => {
             {icon:<MicrophoneStage className="w-5 h-5" weight="duotone"/>,title:"Custom Voice",desc:"Upload your own voice for each actor"},
             {icon:<ShareNetwork className="w-5 h-5" weight="duotone"/>,title:"Share & Export",desc:"MP3, MP4, SRT subtitles + share link"},
           ].map((f,i)=>(
-            <div key={i} className={`p-6 transition-colors ${i<2?`sm:border-r border-b sm:border-b-0 ${d?'border-zinc-800':'border-black/10'}`:''} ${d?'bg-zinc-900 hover:bg-zinc-800':'bg-white hover:bg-zinc-50'}`}>
+            <div key={f.title} className={`p-6 transition-colors ${i<2?`sm:border-r border-b sm:border-b-0 ${d?'border-zinc-800':'border-black/10'}`:''} ${d?'bg-zinc-900 hover:bg-zinc-800':'bg-white hover:bg-zinc-50'}`}>
               <div className={`w-9 h-9 rounded-sm flex items-center justify-center mb-3 ${d?'bg-zinc-800 text-zinc-400':'bg-zinc-100 text-zinc-700'}`}>{f.icon}</div>
               <h3 className={`font-semibold text-sm mb-1 ${d?'text-white':'text-zinc-950'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{f.title}</h3>
               <p className="text-zinc-500 text-xs leading-relaxed">{f.desc}</p>
@@ -346,7 +358,7 @@ const StepProgress = ({ currentStep, steps, isDark }) => {
       const isActive = i === currentStep;
       const isDone = i < currentStep;
       return (
-        <div key={i} className="flex items-center gap-1">
+        <div key={step} className="flex items-center gap-1">
           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider transition-all ${
             isDone ? 'bg-emerald-50 text-emerald-700' : isActive ? (d?'bg-white text-zinc-950':'bg-zinc-950 text-white') : (d?'bg-zinc-800 text-zinc-500':'bg-zinc-100 text-zinc-400')
           }`}>
@@ -514,7 +526,7 @@ const Editor = () => {
       if (type === 'audio') setAudioUrl(url);
       else if (type === 'video') setVideoUrl(url);
       else if (type === 'original') setOriginalVideoUrl(url);
-    } catch (e) { console.error(`Load ${type} failed`, e); }
+    } catch (e) { console.warn(`Load ${type} failed:`, e.message); }
   };
 
   const handleUpload = async (e) => {
@@ -556,7 +568,7 @@ const Editor = () => {
     setProcessingMsg("Generating voices...");
     startProgressPoll();
     try {
-      const r = await axios.post(`${API}/projects/${projectId}/generate-audio-segments?speed=${ttsSpeed}`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 300000 });
+      const r = await axios.post(`${API}/projects/${projectId}/generate-audio-segments?speed=${ttsSpeed}`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: GENERATE_TIMEOUT_MS });
       setProject(r.data);
       if (r.data.dubbed_audio_path) loadFile(r.data.dubbed_audio_path, 'audio');
       toast.success("Audio generated!");
@@ -588,7 +600,7 @@ const Editor = () => {
       updatedSegs = segments.map(s => s.speaker === actorId ? { ...s, voice: value } : s);
     }
     setActors(updated); setSegments(updatedSegs);
-    try { await axios.patch(`${API}/projects/${projectId}`, { actors: updated, segments: updatedSegs }, { headers: { Authorization: `Bearer ${token}` } }); } catch {}
+    try { await axios.patch(`${API}/projects/${projectId}`, { actors: updated, segments: updatedSegs }, { headers: { Authorization: `Bearer ${token}` } }); } catch (err) { console.warn("Actor update save failed:", err.message); }
   };
 
   const uploadActorVoice = async (actorId, file) => {
@@ -719,7 +731,7 @@ const Editor = () => {
       });
       const url = URL.createObjectURL(r.data);
       downloads.push({ url, name: `${project?.title || 'dubbed'}_khmer.mp3` });
-    } catch {}
+    } catch (err) { console.warn("MP3 batch download failed:", err.message); }
     // SRT
     if (segments.some(s => s.translated)) {
       try {
@@ -728,7 +740,7 @@ const Editor = () => {
         });
         const url = URL.createObjectURL(r.data);
         downloads.push({ url, name: `${project?.title || 'subtitles'}_khmer.srt` });
-      } catch {}
+      } catch (err) { console.warn("SRT batch download failed:", err.message); }
     }
     downloads.forEach((d, i) => {
       setTimeout(() => {
@@ -752,8 +764,8 @@ const Editor = () => {
       try {
         const r = await axios.get(`${API}/projects/${projectId}/queue-status`, { headers: { Authorization: `Bearer ${token}` } });
         setProgressInfo(r.data);
-      } catch {}
-    }, 1500);
+      } catch (err) { /* polling errors are non-critical */ }
+    }, PROGRESS_POLL_MS);
   };
   const stopProgressPoll = () => {
     if (progressPollRef.current) { clearInterval(progressPollRef.current); progressPollRef.current = null; }
@@ -782,7 +794,7 @@ const Editor = () => {
     startProgressPoll();
     try {
       const r = await axios.post(`${API}/projects/${projectId}/auto-process?speed=${ttsSpeed}&target_language=${targetLanguage}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }, timeout: 600000
+        headers: { Authorization: `Bearer ${token}` }, timeout: AUTO_PROCESS_TIMEOUT_MS
       });
       setProject(r.data);
       if (r.data.segments) setSegments(r.data.segments);
@@ -1652,7 +1664,7 @@ const SharedProject = () => {
                 </thead>
                 <tbody>
                   {project.segments.map((seg, i) => (
-                    <tr key={i} className={`border-b ${d?'border-zinc-800':'border-black/5'}`}>
+                    <tr key={seg.id ?? i} className={`border-b ${d?'border-zinc-800':'border-black/5'}`}>
                       <td className={`px-4 py-2 ${d?'text-zinc-500':'text-zinc-400'}`}>{i + 1}</td>
                       <td className="px-4 py-2 text-zinc-500 font-mono text-[10px]">
                         {Math.floor((seg.start||0)/60)}:{((seg.start||0)%60).toFixed(0).padStart(2,'0')}

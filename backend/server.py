@@ -147,6 +147,169 @@ def adjust_pitch(input_path: str, output_path: str, pitch_semitones: int):
         import shutil
         shutil.copy2(input_path, output_path)
 
+
+# --- Extracted helpers for transcribe_segments ---
+
+def merge_whisper_segments(raw_segments: list) -> list:
+    """Merge short Whisper segments into natural sentences."""
+    merged = []
+    current = None
+    for seg in raw_segments:
+        text = seg.get('text', '').strip()
+        start = seg.get('start', 0)
+        end = seg.get('end', 0)
+        if not text:
+            continue
+        if current is None:
+            current = {"start": start, "end": end, "text": text}
+        else:
+            gap = start - current["end"]
+            current_len = current["end"] - current["start"]
+            if gap < 0.5 and current_len < 5.0 and len(current["text"]) < 40:
+                current["end"] = end
+                current["text"] += text
+            else:
+                merged.append(current)
+                current = {"start": start, "end": end, "text": text}
+    if current:
+        merged.append(current)
+    return merged
+
+
+def build_actors_from_segments(segments: list) -> list:
+    """Build actor list from detected speaker info in segments."""
+    speaker_info = {}
+    speaker_roles = {}
+    for seg in segments:
+        spk = seg.get("speaker", "SPEAKER_00")
+        if spk not in speaker_info:
+            speaker_info[spk] = {
+                "gender": seg.get("gender", "female"),
+                "first_start": seg.get("start", 0),
+                "last_end": seg.get("end", 0),
+                "total_time": 0,
+                "line_count": 0
+            }
+        if spk not in speaker_roles and seg.get("role"):
+            speaker_roles[spk] = seg["role"]
+        info = speaker_info[spk]
+        info["last_end"] = max(info["last_end"], seg.get("end", 0))
+        info["first_start"] = min(info["first_start"], seg.get("start", 0))
+        info["total_time"] += (seg.get("end", 0) - seg.get("start", 0))
+        info["line_count"] += 1
+
+    actors = []
+    for spk, info in speaker_info.items():
+        role = speaker_roles.get(spk, "")
+        gender_tag = "Boy" if info["gender"] == "male" else "Girl"
+        label = f"{role} ({gender_tag})" if role else gender_tag
+        actors.append({
+            "id": spk, "label": label, "gender": info["gender"],
+            "role": role, "voice": "dara" if info["gender"] == "male" else "sophea",
+            "custom_voice": None, "total_speaking_time": round(info["total_time"], 1),
+            "line_count": info["line_count"],
+            "first_start": round(info["first_start"], 1),
+            "last_end": round(info["last_end"], 1)
+        })
+    return actors
+
+
+def apply_speaker_detections(segments: list, detections: list) -> list:
+    """Apply GPT speaker detection results to segments."""
+    for d in detections:
+        idx = d.get("idx", -1)
+        if 0 <= idx < len(segments):
+            gender = d.get("gender", "female")
+            speaker = d.get("speaker", "SPEAKER_00")
+            role = d.get("role", "")
+            segments[idx]["gender"] = gender
+            segments[idx]["speaker"] = speaker
+            segments[idx]["voice"] = "dara" if gender == "male" else "sophea"
+            if role:
+                segments[idx]["role"] = role
+    return segments
+
+
+def apply_fallback_speakers(segments: list) -> list:
+    """Fallback speaker assignment when GPT detection fails."""
+    for i in range(len(segments)):
+        segments[i]["speaker"] = f"SPEAKER_{str(i % 2).zfill(2)}"
+        segments[i]["gender"] = "female" if i % 2 == 0 else "male"
+        segments[i]["voice"] = "sophea" if i % 2 == 0 else "dara"
+    return segments
+
+
+# --- Extracted helpers for generate_audio_segments ---
+
+def get_media_duration_safe(project: dict) -> int:
+    """Get media duration in ms, returns 0 on failure."""
+    try:
+        file_data, _ = get_object(project["original_file_path"])
+        ext = project['original_filename'].split('.')[-1] if '.' in project['original_filename'] else 'mp4'
+        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
+            tmp.write(file_data)
+            tmp_path = tmp.name
+        duration_ms = int(get_media_duration(tmp_path) * 1000)
+        os.unlink(tmp_path)
+        return duration_ms
+    except Exception as e:
+        logger.warning(f"Could not get media duration: {e}")
+        return 0
+
+
+def separate_custom_and_tts_segments(segments: list, actor_voice_map: dict) -> tuple:
+    """Separate segments into custom audio pairs and TTS-needed segments."""
+    import io
+    from pydub import AudioSegment
+    custom_pairs = []
+    tts_segments = []
+    for seg in segments:
+        if not seg.get("translated") and not seg.get("custom_audio"):
+            continue
+        custom_audio_path = seg.get("custom_audio") or actor_voice_map.get(seg.get("speaker", ""))
+        if custom_audio_path:
+            try:
+                audio_data, _ = get_object(custom_audio_path)
+                ext = custom_audio_path.split(".")[-1].lower() if "." in custom_audio_path else "wav"
+                audio_seg = AudioSegment.from_file(io.BytesIO(audio_data), format=ext)
+                custom_pairs.append((seg, audio_seg))
+                continue
+            except Exception as e:
+                logger.warning(f"Custom audio load failed: {e}, falling back to TTS")
+        if not seg.get("translated"):
+            continue
+        tts_segments.append(seg)
+    return custom_pairs, tts_segments
+
+
+def mix_audio_timeline(segment_audio_pairs: list, segments: list, total_duration_ms: int, has_timestamps: bool):
+    """Mix audio segments into a timeline-aligned or concatenated output."""
+    from pydub import AudioSegment
+    if has_timestamps and total_duration_ms > 0:
+        combined = AudioSegment.silent(duration=total_duration_ms)
+        for seg, audio in segment_audio_pairs:
+            start_ms = int(seg.get("start", 0) * 1000)
+            seg_duration_ms = int((seg.get("end", 0) - seg.get("start", 0)) * 1000)
+            if seg_duration_ms > 0 and len(audio) > seg_duration_ms * 1.2:
+                speed_factor = len(audio) / seg_duration_ms
+                if speed_factor <= 2.0:
+                    audio = audio.speedup(playback_speed=min(speed_factor, 1.8))
+            combined = combined.overlay(audio, position=start_ms)
+    else:
+        combined = segment_audio_pairs[0][1]
+        for _, audio in segment_audio_pairs[1:]:
+            combined += audio
+    return combined
+
+
+# --- Constants ---
+TTS_BATCH_SIZE = 5
+TRANSLATE_CHUNK_SIZE = 50
+POLL_INTERVAL_S = 1.5
+REQUEST_TIMEOUT_MS = 300000
+AUTO_PROCESS_TIMEOUT_MS = 600000
+
+
 # FastAPI app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -606,30 +769,7 @@ async def transcribe_segments(project_id: str, authorization: str = Header(None)
             raw_segments = response.segments if hasattr(response, 'segments') else []
             
             # Step 1: Merge short segments into natural sentences
-            # Whisper sometimes splits into tiny 1-second chunks — merge them
-            merged = []
-            current = None
-            for seg in raw_segments:
-                text = seg.get('text', '').strip()
-                start = seg.get('start', 0)
-                end = seg.get('end', 0)
-                if not text:
-                    continue
-                if current is None:
-                    current = {"start": start, "end": end, "text": text}
-                else:
-                    gap = start - current["end"]
-                    current_len = current["end"] - current["start"]
-                    # Merge if: gap < 0.5s AND current segment < 5s AND text is short
-                    if gap < 0.5 and current_len < 5.0 and len(current["text"]) < 40:
-                        current["end"] = end
-                        current["text"] += text
-                    else:
-                        merged.append(current)
-                        current = {"start": start, "end": end, "text": text}
-            if current:
-                merged.append(current)
-            
+            merged = merge_whisper_segments(raw_segments)
             logger.info(f"Merged {len(raw_segments)} raw segments into {len(merged)} natural segments")
             
             segments = []
@@ -696,70 +836,16 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
                         start_idx = result_text.index("[")
                         end_idx = result_text.rindex("]") + 1
                         detections = json.loads(result_text[start_idx:end_idx])
+                        segments = apply_speaker_detections(segments, detections)
                         
-                        for d in detections:
-                            idx = d.get("idx", -1)
-                            if 0 <= idx < len(segments):
-                                gender = d.get("gender", "female")
-                                speaker = d.get("speaker", "SPEAKER_00")
-                                role = d.get("role", "")
-                                segments[idx]["gender"] = gender
-                                segments[idx]["speaker"] = speaker
-                                segments[idx]["voice"] = "dara" if gender == "male" else "sophea"
-                                if role:
-                                    segments[idx]["role"] = role
-                        
-                        # Verify: count unique speakers detected
                         unique_speakers = set(s["speaker"] for s in segments)
                         logger.info(f"Detected {len(unique_speakers)} unique speakers: {unique_speakers}")
                         
                 except Exception as e:
                     logger.warning(f"Speaker detection failed, using fallback: {e}")
-                    # Fallback: try basic alternating if GPT fails
-                    for i, seg in enumerate(segments):
-                        segments[i]["speaker"] = f"SPEAKER_{str(i % 2).zfill(2)}"
-                        segments[i]["gender"] = "female" if i % 2 == 0 else "male"
-                        segments[i]["voice"] = "sophea" if i % 2 == 0 else "dara"
+                    segments = apply_fallback_speakers(segments)
 
-            # Build actors from unique speakers with speaking time ranges
-            speaker_info = {}
-            speaker_roles = {}
-            for seg in segments:
-                spk = seg.get("speaker", "SPEAKER_00")
-                if spk not in speaker_info:
-                    speaker_info[spk] = {
-                        "gender": seg.get("gender", "female"),
-                        "first_start": seg.get("start", 0),
-                        "last_end": seg.get("end", 0),
-                        "total_time": 0,
-                        "line_count": 0
-                    }
-                if spk not in speaker_roles and seg.get("role"):
-                    speaker_roles[spk] = seg["role"]
-                info = speaker_info[spk]
-                info["last_end"] = max(info["last_end"], seg.get("end", 0))
-                info["first_start"] = min(info["first_start"], seg.get("start", 0))
-                info["total_time"] += (seg.get("end", 0) - seg.get("start", 0))
-                info["line_count"] += 1
-
-            actors = []
-            for spk, info in speaker_info.items():
-                role = speaker_roles.get(spk, "")
-                gender_tag = "Boy" if info["gender"] == "male" else "Girl"
-                label = f"{role} ({gender_tag})" if role else gender_tag
-                
-                actors.append({
-                    "id": spk,
-                    "label": label,
-                    "gender": info["gender"],
-                    "role": role,
-                    "voice": "dara" if info["gender"] == "male" else "sophea",
-                    "custom_voice": None,
-                    "total_speaking_time": round(info["total_time"], 1),
-                    "line_count": info["line_count"],
-                    "first_start": round(info["first_start"], 1),
-                    "last_end": round(info["last_end"], 1)
-                })
+            actors = build_actors_from_segments(segments)
 
             await db.projects.update_one(
                 {"project_id": project_id},
@@ -802,10 +888,9 @@ async def translate_segments(project_id: str, target_language: str = Query("km")
         import time as _time
         queue_status[project_id] = {"status": "processing", "step": "translating", "progress": 0, "total": len(segments), "started_at": _time.time()}
         
-        # Chunk translation for long videos (50 segments per batch)
-        TRANSLATE_CHUNK = 50
-        for chunk_start in range(0, len(segments), TRANSLATE_CHUNK):
-            chunk_end = min(chunk_start + TRANSLATE_CHUNK, len(segments))
+        # Chunk translation for long videos
+        for chunk_start in range(0, len(segments), TRANSLATE_CHUNK_SIZE):
+            chunk_end = min(chunk_start + TRANSLATE_CHUNK_SIZE, len(segments))
             chunk = segments[chunk_start:chunk_end]
             
             chat = LlmChat(
@@ -898,63 +983,21 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
     )
 
     try:
-        # Gemini TTS voice mapping (male/female Khmer voices)
-        voice_map = {
-            "sophea": "Puck", "chanthy": "Kore", "bopha": "Leda", "srey": "Aoede",
-            "dara": "Charon", "virak": "Orus", "sokha": "Fenrir", "pich": "Pegasus"
-        }
-
-        GOOGLE_TTS_KEY = os.environ.get('GOOGLE_TTS_KEY', '')
-        TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
-
         actors = project.get("actors", [])
         actor_voice_map = {a["id"]: a["custom_voice"] for a in actors if a.get("custom_voice")}
         actor_ai_voice_map = {a["id"]: a["voice"] for a in actors if a.get("voice")}
         target_lang = project.get("target_language", "km")
 
-        # Get original media duration for timeline alignment
-        total_duration_ms = 0
-        try:
-            file_data, _ = get_object(project["original_file_path"])
-            with tempfile.NamedTemporaryFile(suffix=f".{project['original_filename'].split('.')[-1]}", delete=False) as tmp:
-                tmp.write(file_data)
-                tmp_path = tmp.name
-            total_duration_ms = int(get_media_duration(tmp_path) * 1000)
-            os.unlink(tmp_path)
-        except Exception as e:
-            logger.warning(f"Could not get media duration: {e}")
-
+        total_duration_ms = get_media_duration_safe(project)
         has_timestamps = any(seg.get("start", 0) > 0 or seg.get("end", 0) > 0 for seg in segments)
         if not total_duration_ms and has_timestamps:
             last_end = max(seg.get("end", 0) for seg in segments)
             total_duration_ms = int((last_end + 2) * 1000)
 
-        segment_audio_pairs = []
-        
-        # Separate custom audio segments and TTS segments
-        custom_pairs = []
-        tts_segments = []
-        
-        for seg in segments:
-            if not seg.get("translated") and not seg.get("custom_audio"):
-                continue
-            custom_audio_path = seg.get("custom_audio") or actor_voice_map.get(seg.get("speaker", ""))
-            if custom_audio_path:
-                try:
-                    audio_data, _ = get_object(custom_audio_path)
-                    ext = custom_audio_path.split(".")[-1].lower() if "." in custom_audio_path else "wav"
-                    audio_seg = AudioSegment.from_file(io.BytesIO(audio_data), format=ext)
-                    custom_pairs.append((seg, audio_seg))
-                    continue
-                except Exception as e:
-                    logger.warning(f"Custom audio load failed: {e}, falling back to TTS")
-            if not seg.get("translated"):
-                continue
-            tts_segments.append(seg)
+        custom_pairs, tts_segments = separate_custom_and_tts_segments(segments, actor_voice_map)
 
-        # Parallel TTS generation - process 5 at a time
+        # Parallel TTS generation
         import edge_tts
-        BATCH_SIZE = 5
         
         async def generate_single_tts(seg):
             speaker = seg.get("speaker", "")
@@ -974,47 +1017,30 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
             except Exception as e:
                 logger.warning(f"Edge TTS failed for segment: {e}")
                 if os.path.exists(tts_path):
-                    try: os.unlink(tts_path)
-                    except: pass
+                    try:
+                        os.unlink(tts_path)
+                    except OSError:
+                        pass
                 return None
 
         tts_pairs = []
         import time as _time
         queue_status[project_id] = {"status": "processing", "step": "generating_audio", "progress": 0, "total": len(tts_segments), "started_at": _time.time()}
-        for i in range(0, len(tts_segments), BATCH_SIZE):
-            batch = tts_segments[i:i + BATCH_SIZE]
+        for i in range(0, len(tts_segments), TTS_BATCH_SIZE):
+            batch = tts_segments[i:i + TTS_BATCH_SIZE]
             results = await asyncio.gather(*[generate_single_tts(seg) for seg in batch])
             tts_pairs.extend([r for r in results if r is not None])
-            queue_status[project_id]["progress"] = min(i + BATCH_SIZE, len(tts_segments))
-            logger.info(f"TTS batch {i // BATCH_SIZE + 1}: {len([r for r in results if r])} generated ({queue_status[project_id]['progress']}/{len(tts_segments)})")
+            queue_status[project_id]["progress"] = min(i + TTS_BATCH_SIZE, len(tts_segments))
+            logger.info(f"TTS batch {i // TTS_BATCH_SIZE + 1}: {len([r for r in results if r])} generated ({queue_status[project_id]['progress']}/{len(tts_segments)})")
 
         # Combine custom + TTS, sort by segment order
         all_pairs = custom_pairs + tts_pairs
-        seg_order = {id(seg): idx for idx, seg in enumerate(segments)}
         segment_audio_pairs = sorted(all_pairs, key=lambda p: p[0].get("id", 0))
 
         if not segment_audio_pairs:
             raise Exception("No audio generated")
 
-        # Timeline-aligned mixing
-        if has_timestamps and total_duration_ms > 0:
-            combined = AudioSegment.silent(duration=total_duration_ms)
-            for seg, audio in segment_audio_pairs:
-                start_ms = int(seg.get("start", 0) * 1000)
-                seg_duration_ms = int((seg.get("end", 0) - seg.get("start", 0)) * 1000)
-                
-                # Speed up audio if it's longer than the segment slot (with 20% tolerance)
-                if seg_duration_ms > 0 and len(audio) > seg_duration_ms * 1.2:
-                    speed_factor = len(audio) / seg_duration_ms
-                    if speed_factor <= 2.0:
-                        audio = audio.speedup(playback_speed=min(speed_factor, 1.8))
-                
-                combined = combined.overlay(audio, position=start_ms)
-        else:
-            # Simple concatenation fallback
-            combined = segment_audio_pairs[0][1]
-            for _, audio in segment_audio_pairs[1:]:
-                combined += audio
+        combined = mix_audio_timeline(segment_audio_pairs, segments, total_duration_ms, has_timestamps)
 
         output = io.BytesIO()
         combined.export(output, format="wav")
@@ -1113,7 +1139,7 @@ async def download_file(path: str, authorization: str = Header(None), auth: str 
 @api_router.post("/translate")
 async def quick_translate(request: TranslateRequest, authorization: str = Header(None)):
     from emergentintegrations.llm.chat import LlmChat, UserMessage
-    user = await get_current_user(authorization)
+    await get_current_user(authorization)
     target_name = LANGUAGE_NAMES.get(request.target_language, request.target_language)
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -1306,19 +1332,19 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
                 {"$set": {"status": "transcribing", "updated_at": datetime.now(timezone.utc).isoformat()}}
             )
             # Call transcribe endpoint logic internally
-            result = await transcribe_segments(project_id, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
+            await transcribe_segments(project_id, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         
         # Step 2: Translate (if not done)
         if project.get("status") == "transcribed":
             queue_status[project_id].update({"step": "translating", "progress": 1, "total": 3})
-            result = await translate_segments(project_id, target_language=target_language, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
+            await translate_segments(project_id, target_language=target_language, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         
         # Step 3: Generate audio (if not done)
         if project.get("status") == "translated":
             queue_status[project_id].update({"step": "generating_audio", "progress": 2, "total": 3})
-            result = await generate_audio_segments(project_id, speed=speed, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
+            await generate_audio_segments(project_id, speed=speed, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         
         queue_status[project_id] = {"position": 0, "status": "done"}
