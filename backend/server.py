@@ -150,6 +150,7 @@ class ProjectUpdate(BaseModel):
     voice: Optional[str] = None
     female_voice: Optional[str] = None
     male_voice: Optional[str] = None
+    segments: Optional[List[dict]] = None
 
 class TranslateRequest(BaseModel):
     chinese_text: str
@@ -324,6 +325,7 @@ async def create_project(project: ProjectCreate, authorization: str = Header(Non
         "translated_text": None,
         "dubbed_audio_path": None,
         "dubbed_video_path": None,
+        "segments": [],
         "status": "created",
         "voice": "sophea",
         "female_voice": "sophea",
@@ -540,6 +542,309 @@ async def transcribe_project(project_id: str, authorization: str = Header(None))
             
     except Exception as e:
         logger.error(f"Transcription error: {str(e)}")
+        await db.projects.update_one(
+            {"project_id": project_id},
+            {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Transcribe with segments (timestamp-based)
+@api_router.post("/projects/{project_id}/transcribe-segments")
+async def transcribe_segments(project_id: str, authorization: str = Header(None)):
+    """Transcribe audio with timestamps and speaker detection"""
+    from emergentintegrations.llm.openai import OpenAISpeechToText
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    
+    user = await get_current_user(authorization)
+    
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not project.get("original_file_path"):
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"status": "transcribing", "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    try:
+        # Download file
+        file_data, _ = get_object(project["original_file_path"])
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ext = project["original_filename"].split(".")[-1] if "." in project["original_filename"] else "mp4"
+            input_path = os.path.join(temp_dir, f"input.{ext}")
+            audio_path = os.path.join(temp_dir, "audio.wav")
+            
+            with open(input_path, "wb") as f:
+                f.write(file_data)
+            
+            # Extract audio
+            cmd = ["ffmpeg", "-y", "-i", input_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path]
+            subprocess.run(cmd, capture_output=True)
+            
+            # Transcribe with Whisper (verbose_json for timestamps)
+            stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+            
+            with open(audio_path, "rb") as audio_file:
+                response = await stt.transcribe(
+                    file=audio_file,
+                    model="whisper-1",
+                    language="zh",
+                    response_format="verbose_json"
+                )
+            
+            # Parse segments
+            raw_segments = response.segments if hasattr(response, 'segments') else []
+            
+            segments = []
+            for i, seg in enumerate(raw_segments):
+                segments.append({
+                    "id": i,
+                    "start": seg.get('start', 0),
+                    "end": seg.get('end', 0),
+                    "original": seg.get('text', '').strip(),
+                    "translated": "",
+                    "speaker": f"SPEAKER_{str(i % 2).zfill(2)}",
+                    "gender": "female" if i % 2 == 0 else "male",
+                    "voice": "sophea" if i % 2 == 0 else "dara"
+                })
+            
+            # Use AI to detect gender from context
+            if segments:
+                detect_chat = LlmChat(
+                    api_key=EMERGENT_LLM_KEY,
+                    session_id=f"detect_{project_id}",
+                    system_message="""Analyze the Chinese text segments and detect speaker gender.
+For each segment, determine if speaker is male or female based on:
+- Context clues (他/她, 男/女, names)
+- Dialogue patterns
+- Speaking style
+
+Return a JSON array with segment index and gender:
+[{"idx": 0, "gender": "female"}, {"idx": 1, "gender": "male"}, ...]"""
+                )
+                detect_chat.with_model("openai", "gpt-5.2")
+                
+                all_text = "\n".join([f"{i}: {s['original']}" for i, s in enumerate(segments)])
+                try:
+                    gender_result = await detect_chat.send_message(UserMessage(text=all_text))
+                    import json
+                    # Try to parse gender detection
+                    if "[" in gender_result:
+                        start = gender_result.index("[")
+                        end = gender_result.rindex("]") + 1
+                        genders = json.loads(gender_result[start:end])
+                        for g in genders:
+                            idx = g.get("idx", 0)
+                            if idx < len(segments):
+                                segments[idx]["gender"] = g.get("gender", "female")
+                                segments[idx]["voice"] = "dara" if g.get("gender") == "male" else "sophea"
+                except Exception as e:
+                    logger.warning(f"Gender detection failed: {e}")
+            
+            await db.projects.update_one(
+                {"project_id": project_id},
+                {"$set": {
+                    "segments": segments,
+                    "status": "transcribed",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            
+            return await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+            
+    except Exception as e:
+        logger.error(f"Transcription error: {str(e)}")
+        await db.projects.update_one(
+            {"project_id": project_id},
+            {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Translate segments
+@api_router.post("/projects/{project_id}/translate-segments")
+async def translate_segments(project_id: str, authorization: str = Header(None)):
+    """Translate all segments to Khmer"""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    
+    user = await get_current_user(authorization)
+    
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    segments = project.get("segments", [])
+    if not segments:
+        raise HTTPException(status_code=400, detail="No segments to translate")
+    
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"status": "translating", "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    try:
+        # Translate all segments at once for consistency
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"translate_seg_{project_id}",
+            system_message="""You are a Chinese to Khmer translator. Translate each numbered Chinese line to Khmer.
+Return translations in exact same format: number followed by Khmer translation.
+Only output translations, nothing else."""
+        )
+        chat.with_model("openai", "gpt-5.2")
+        
+        # Build input text
+        input_text = "\n".join([f"{i}: {s['original']}" for i, s in enumerate(segments)])
+        translations = await chat.send_message(UserMessage(text=input_text))
+        
+        # Parse translations
+        lines = translations.strip().split("\n")
+        for line in lines:
+            if ":" in line:
+                try:
+                    idx_str, trans = line.split(":", 1)
+                    idx = int(idx_str.strip())
+                    if idx < len(segments):
+                        segments[idx]["translated"] = trans.strip()
+                except:
+                    pass
+        
+        await db.projects.update_one(
+            {"project_id": project_id},
+            {"$set": {
+                "segments": segments,
+                "status": "translated",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        return await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+        
+    except Exception as e:
+        logger.error(f"Translation error: {str(e)}")
+        await db.projects.update_one(
+            {"project_id": project_id},
+            {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Generate audio from segments
+@api_router.post("/projects/{project_id}/generate-audio-segments")
+async def generate_audio_segments(project_id: str, authorization: str = Header(None)):
+    """Generate multi-voice audio from segments"""
+    import requests
+    import time
+    import io
+    from pydub import AudioSegment
+    
+    user = await get_current_user(authorization)
+    
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    segments = project.get("segments", [])
+    if not segments:
+        raise HTTPException(status_code=400, detail="No segments")
+    
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"status": "generating_audio", "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    try:
+        headers = {
+            "x-api-key": CAMB_API_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        voice_gender = {
+            "sophea": 2, "chanthy": 2, "bopha": 2, "srey": 2,
+            "dara": 1, "virak": 1, "sokha": 1, "pich": 1
+        }
+        
+        audio_parts = []
+        
+        for seg in segments:
+            if not seg.get("translated"):
+                continue
+            
+            voice = seg.get("voice", "sophea")
+            gender = voice_gender.get(voice, 2)
+            
+            # Generate TTS
+            payload = {
+                "text": seg["translated"],
+                "voice_id": 147319,
+                "language": 92,
+                "gender": gender
+            }
+            
+            response = requests.post(
+                "https://client.camb.ai/apis/tts",
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            task_id = response.json().get("task_id")
+            
+            # Poll for completion
+            for _ in range(60):
+                status_resp = requests.get(
+                    f"https://client.camb.ai/apis/tts/{task_id}",
+                    headers=headers,
+                    timeout=30
+                )
+                status_data = status_resp.json()
+                if status_data.get("status") == "SUCCESS":
+                    run_id = status_data.get("run_id")
+                    break
+                elif status_data.get("status") == "FAILURE":
+                    raise Exception(f"TTS failed")
+                time.sleep(2)
+            
+            # Download audio
+            audio_resp = requests.get(
+                f"https://client.camb.ai/apis/tts-result/{run_id}",
+                headers=headers,
+                timeout=60
+            )
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_resp.content), format="flac")
+            audio_parts.append(audio_segment)
+        
+        # Combine all audio
+        if audio_parts:
+            combined = audio_parts[0]
+            for part in audio_parts[1:]:
+                combined += part
+            
+            output = io.BytesIO()
+            combined.export(output, format="wav")
+            audio_bytes = output.getvalue()
+        else:
+            raise Exception("No audio generated")
+        
+        # Upload
+        path = f"{APP_NAME}/audio/{user.user_id}/{project_id}/dubbed_{uuid.uuid4().hex}.wav"
+        result = put_object(path, audio_bytes, "audio/wav")
+        
+        await db.projects.update_one(
+            {"project_id": project_id},
+            {"$set": {
+                "dubbed_audio_path": result["path"],
+                "status": "audio_ready",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        return await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+        
+    except Exception as e:
+        logger.error(f"Audio generation error: {str(e)}")
         await db.projects.update_one(
             {"project_id": project_id},
             {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
