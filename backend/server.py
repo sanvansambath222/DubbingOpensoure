@@ -30,6 +30,9 @@ EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 # ElevenLabs API Key
 ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY')
 
+# Google Cloud API Key for Khmer TTS
+GOOGLE_CLOUD_API_KEY = os.environ.get('GOOGLE_CLOUD_API_KEY')
+
 # Object Storage with local fallback
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 APP_NAME = "khmer-dubbing"
@@ -538,9 +541,8 @@ async def translate_project(project_id: str, authorization: str = Header(None)):
 # Generate dubbed audio
 @api_router.post("/projects/{project_id}/generate-audio")
 async def generate_audio(project_id: str, authorization: str = Header(None)):
-    """Generate Khmer dubbed audio using ElevenLabs TTS"""
-    from elevenlabs import ElevenLabs
-    from elevenlabs import VoiceSettings
+    """Generate Khmer dubbed audio using Google Cloud TTS (real Khmer voice)"""
+    import requests
     
     user = await get_current_user(authorization)
     
@@ -557,64 +559,90 @@ async def generate_audio(project_id: str, authorization: str = Header(None)):
     )
     
     try:
-        # Use ElevenLabs for natural Khmer voice
-        eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-        
-        # ElevenLabs voice actors
+        # Use Google Cloud TTS for REAL Khmer voice
+        # Voice options: km-KH-Standard-A (female), km-KH-Standard-B (male)
         voice_map = {
             # Female voices
-            "sarah": "EXAVITQu4vr4xnSDxMaL",      # Sarah - Mature, Confident
-            "laura": "FGY2WhTYpPnrIDTdsKH5",      # Laura - Enthusiast
-            "alice": "Xb7hH8MSUJpSbSDYk0k2",      # Alice - Clear Educator
-            "matilda": "XrExE9yKIg1WjnnlVkGX",    # Matilda - Professional
-            "jessica": "cgSgspJ2msm6clMCkdW9",    # Jessica - Playful
-            "bella": "hpp4J3VqNfWAUOO0d1Us",      # Bella - Professional
-            "lily": "pFZP5JQG7iQjIQuC4Bku",       # Lily - Velvety Actress
+            "sophea": "km-KH-Standard-A",
+            "chanthy": "km-KH-Standard-A",
+            "sarah": "km-KH-Standard-A",
+            "laura": "km-KH-Standard-A",
+            "alice": "km-KH-Standard-A",
+            "matilda": "km-KH-Standard-A",
+            "jessica": "km-KH-Standard-A",
+            "bella": "km-KH-Standard-A",
+            "lily": "km-KH-Standard-A",
             # Male voices
-            "roger": "CwhRBWXzGAHq8TQ4Fs17",      # Roger - Laid-Back
-            "charlie": "IKne3meq5aSn9XLyUdCD",    # Charlie - Deep
-            "george": "JBFqnCBsd6RMkjVDRZzb",     # George - Warm Storyteller
-            "callum": "N2lVS1w4EtoT3dr4eOWO",    # Callum - Husky
-            "harry": "SOYHLrjzK2X1ezoPC6cr",      # Harry - Fierce
-            "liam": "TX3LPaxmHKxFdv7VOQHJ",       # Liam - Energetic
-            "chris": "iP95p4xoKVk53GoZ742B",      # Chris - Charming
-            "brian": "nPczCjzI2devNBz1zQrb",      # Brian - Deep, Comforting
-            "daniel": "onwK4e9ZLuTAKqWW03F9",     # Daniel - Broadcaster
-            "adam": "pNInz6obpgDQGcFmaJgB",       # Adam - Dominant
-            "bill": "pqHfZKP75CvOlQylNhV4",       # Bill - Wise
-            # Neutral
-            "river": "SAz9YHcvj6GT2YYXdXww",      # River - Relaxed
-            # Legacy mapping
-            "alloy": "EXAVITQu4vr4xnSDxMaL",
-            "echo": "JBFqnCBsd6RMkjVDRZzb",
-            "fable": "FGY2WhTYpPnrIDTdsKH5",
-            "onyx": "IKne3meq5aSn9XLyUdCD",
-            "nova": "TX3LPaxmHKxFdv7VOQHJ",
-            "shimmer": "Xb7hH8MSUJpSbSDYk0k2"
+            "dara": "km-KH-Standard-B",
+            "virak": "km-KH-Standard-B",
+            "roger": "km-KH-Standard-B",
+            "charlie": "km-KH-Standard-B",
+            "george": "km-KH-Standard-B",
+            "callum": "km-KH-Standard-B",
+            "harry": "km-KH-Standard-B",
+            "liam": "km-KH-Standard-B",
+            "chris": "km-KH-Standard-B",
+            "brian": "km-KH-Standard-B",
+            "daniel": "km-KH-Standard-B",
+            "adam": "km-KH-Standard-B",
+            "bill": "km-KH-Standard-B",
+            "river": "km-KH-Standard-A",
+            # Legacy
+            "alloy": "km-KH-Standard-A",
+            "echo": "km-KH-Standard-B",
+            "fable": "km-KH-Standard-A",
+            "onyx": "km-KH-Standard-B",
+            "nova": "km-KH-Standard-A",
+            "shimmer": "km-KH-Standard-A"
         }
         
-        voice_id = voice_map.get(project.get("voice", "sarah"), "EXAVITQu4vr4xnSDxMaL")
+        voice_name = voice_map.get(project.get("voice", "sophea"), "km-KH-Standard-A")
         
-        # Generate audio with multilingual model for Khmer
-        audio_generator = eleven_client.text_to_speech.convert(
-            text=project["translated_text"],
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2",  # Supports Khmer
-            voice_settings=VoiceSettings(
-                stability=0.5,
-                similarity_boost=0.75,
-                style=0.0,
-                use_speaker_boost=True
-            )
-        )
+        # Google Cloud TTS API request
+        url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={GOOGLE_CLOUD_API_KEY}"
         
-        # Collect audio data
-        audio_bytes = b""
-        for chunk in audio_generator:
-            audio_bytes += chunk
+        payload = {
+            "input": {"text": project["translated_text"]},
+            "voice": {
+                "languageCode": "km-KH",
+                "name": voice_name
+            },
+            "audioConfig": {
+                "audioEncoding": "MP3",
+                "speakingRate": 1.0,
+                "pitch": 0.0
+            }
+        }
+        
+        response = requests.post(url, json=payload, timeout=60)
+        response.raise_for_status()
+        
+        # Decode base64 audio
+        import base64
+        audio_content = response.json().get("audioContent")
+        audio_bytes = base64.b64decode(audio_content)
         
         # Upload to storage
         path = f"{APP_NAME}/audio/{user.user_id}/{project_id}/dubbed_{uuid.uuid4().hex}.mp3"
+        result = put_object(path, audio_bytes, "audio/mpeg")
+        
+        await db.projects.update_one(
+            {"project_id": project_id},
+            {"$set": {
+                "dubbed_audio_path": result["path"],
+                "status": "audio_ready",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        return await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+    except Exception as e:
+        logger.error(f"Google Cloud TTS error: {str(e)}")
+        await db.projects.update_one(
+            {"project_id": project_id},
+            {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        raise HTTPException(status_code=500, detail=str(e))
         result = put_object(path, audio_bytes, "audio/mpeg")
         
         await db.projects.update_one(
