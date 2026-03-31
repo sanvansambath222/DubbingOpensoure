@@ -933,10 +933,10 @@ const Editor = () => {
             {/* Voice Selection */}
             <div className="mt-6">
               <label className="text-xs font-bold uppercase tracking-[0.2em] text-[#71717A] mb-3 block">
-                Voice
+                Voice Actor
               </label>
               <select
-                value={project?.voice || "alloy"}
+                value={project?.voice || "sarah"}
                 onChange={async (e) => {
                   try {
                     const response = await axios.patch(`${API}/projects/${projectId}`, 
@@ -950,12 +950,31 @@ const Editor = () => {
                 }}
                 className="w-full bg-[#141415] border border-[#27272A] text-white px-4 py-3 text-sm focus:outline-none focus:border-[#0055FF] transition-all"
               >
-                <option value="alloy">Alloy - Neutral</option>
-                <option value="echo">Echo - Smooth</option>
-                <option value="fable">Fable - Expressive</option>
-                <option value="onyx">Onyx - Deep</option>
-                <option value="nova">Nova - Energetic</option>
-                <option value="shimmer">Shimmer - Bright</option>
+                <optgroup label="Female Voices">
+                  <option value="sarah">Sarah - Mature, Confident</option>
+                  <option value="laura">Laura - Enthusiast, Quirky</option>
+                  <option value="alice">Alice - Clear Educator</option>
+                  <option value="matilda">Matilda - Professional</option>
+                  <option value="jessica">Jessica - Playful, Warm</option>
+                  <option value="bella">Bella - Professional, Bright</option>
+                  <option value="lily">Lily - Velvety Actress</option>
+                </optgroup>
+                <optgroup label="Male Voices">
+                  <option value="roger">Roger - Laid-Back, Casual</option>
+                  <option value="charlie">Charlie - Deep, Energetic</option>
+                  <option value="george">George - Warm Storyteller</option>
+                  <option value="callum">Callum - Husky Trickster</option>
+                  <option value="harry">Harry - Fierce Warrior</option>
+                  <option value="liam">Liam - Energetic Creator</option>
+                  <option value="chris">Chris - Charming</option>
+                  <option value="brian">Brian - Deep, Comforting</option>
+                  <option value="daniel">Daniel - Steady Broadcaster</option>
+                  <option value="adam">Adam - Dominant, Firm</option>
+                  <option value="bill">Bill - Wise, Mature</option>
+                </optgroup>
+                <optgroup label="Neutral">
+                  <option value="river">River - Relaxed, Informative</option>
+                </optgroup>
               </select>
             </div>
           </div>

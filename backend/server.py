@@ -560,17 +560,40 @@ async def generate_audio(project_id: str, authorization: str = Header(None)):
         # Use ElevenLabs for natural Khmer voice
         eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
         
-        # Map voice selection to ElevenLabs voices
+        # ElevenLabs voice actors
         voice_map = {
-            "alloy": "EXAVITQu4vr4xnSDxMaL",  # Sarah - Mature
-            "echo": "JBFqnCBsd6RMkjVDRZzb",   # George - Warm
-            "fable": "FGY2WhTYpPnrIDTdsKH5",  # Laura - Enthusiast
-            "onyx": "IKne3meq5aSn9XLyUdCD",   # Charlie - Deep
-            "nova": "TX3LPaxmHKxFdv7VOQHJ",   # Liam - Energetic
-            "shimmer": "Xb7hH8MSUJpSbSDYk0k2" # Alice - Clear
+            # Female voices
+            "sarah": "EXAVITQu4vr4xnSDxMaL",      # Sarah - Mature, Confident
+            "laura": "FGY2WhTYpPnrIDTdsKH5",      # Laura - Enthusiast
+            "alice": "Xb7hH8MSUJpSbSDYk0k2",      # Alice - Clear Educator
+            "matilda": "XrExE9yKIg1WjnnlVkGX",    # Matilda - Professional
+            "jessica": "cgSgspJ2msm6clMCkdW9",    # Jessica - Playful
+            "bella": "hpp4J3VqNfWAUOO0d1Us",      # Bella - Professional
+            "lily": "pFZP5JQG7iQjIQuC4Bku",       # Lily - Velvety Actress
+            # Male voices
+            "roger": "CwhRBWXzGAHq8TQ4Fs17",      # Roger - Laid-Back
+            "charlie": "IKne3meq5aSn9XLyUdCD",    # Charlie - Deep
+            "george": "JBFqnCBsd6RMkjVDRZzb",     # George - Warm Storyteller
+            "callum": "N2lVS1w4EtoT3dr4eOWO",    # Callum - Husky
+            "harry": "SOYHLrjzK2X1ezoPC6cr",      # Harry - Fierce
+            "liam": "TX3LPaxmHKxFdv7VOQHJ",       # Liam - Energetic
+            "chris": "iP95p4xoKVk53GoZ742B",      # Chris - Charming
+            "brian": "nPczCjzI2devNBz1zQrb",      # Brian - Deep, Comforting
+            "daniel": "onwK4e9ZLuTAKqWW03F9",     # Daniel - Broadcaster
+            "adam": "pNInz6obpgDQGcFmaJgB",       # Adam - Dominant
+            "bill": "pqHfZKP75CvOlQylNhV4",       # Bill - Wise
+            # Neutral
+            "river": "SAz9YHcvj6GT2YYXdXww",      # River - Relaxed
+            # Legacy mapping
+            "alloy": "EXAVITQu4vr4xnSDxMaL",
+            "echo": "JBFqnCBsd6RMkjVDRZzb",
+            "fable": "FGY2WhTYpPnrIDTdsKH5",
+            "onyx": "IKne3meq5aSn9XLyUdCD",
+            "nova": "TX3LPaxmHKxFdv7VOQHJ",
+            "shimmer": "Xb7hH8MSUJpSbSDYk0k2"
         }
         
-        voice_id = voice_map.get(project.get("voice", "alloy"), "EXAVITQu4vr4xnSDxMaL")
+        voice_id = voice_map.get(project.get("voice", "sarah"), "EXAVITQu4vr4xnSDxMaL")
         
         # Generate audio with multilingual model for Khmer
         audio_generator = eleven_client.text_to_speech.convert(
