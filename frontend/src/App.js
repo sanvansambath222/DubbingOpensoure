@@ -923,7 +923,7 @@ const Editor = () => {
             {originalVideoUrl && (
               <div>
                 <label className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider mb-1.5 block">Original Video</label>
-                <video ref={originalVideoRef} src={originalVideoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '140px' }} data-testid="original-video-preview" />
+                <video ref={originalVideoRef} src={originalVideoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '200px' }} data-testid="original-video-preview" />
               </div>
             )}
 
@@ -997,17 +997,17 @@ const Editor = () => {
                 <div className="space-y-2">
                   <div>
                     <p className="text-[9px] text-zinc-400 uppercase mb-1">Original</p>
-                    <video src={originalVideoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '120px' }} />
+                    <video src={originalVideoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '180px' }} />
                   </div>
                   <div>
                     <p className="text-[9px] text-cyan-500 uppercase mb-1">Dubbed</p>
-                    <video src={videoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '120px' }} />
+                    <video src={videoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '180px' }} />
                   </div>
                 </div>
               ) : (
                 <>
                   {videoUrl && (
-                    <video src={videoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '180px' }} data-testid="video-preview" />
+                    <video src={videoUrl} controls className="w-full rounded-sm bg-black" style={{ maxHeight: '240px' }} data-testid="video-preview" />
                   )}
                 </>
               )}
