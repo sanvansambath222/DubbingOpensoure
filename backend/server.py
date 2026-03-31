@@ -620,14 +620,15 @@ AGE ESTIMATION:
 
 ROLE DETECTION:
 - Identify the character's role: Narrator, Boss, Wife, Doctor, Student, etc.
-- If character has a proper name, use that name as role
+- If character has a proper name (e.g. 杜清禾), translate or romanize it to English (e.g. "Du Qinghe")
 - 旁白/自述 = Narrator
+- ALL role names MUST be in English. Never return Chinese characters in the role field.
 
 IMPORTANT: You MUST identify at least some speakers as "male" if the dialogue contains male characters.
 
 Return ONLY JSON array:
 [{"idx": 0, "speaker": "SPEAKER_00", "gender": "male", "role": "Boss", "age": "40s"}, ...]
-Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male" or "female". age should be like "20s", "30s", "40s", "50s", "60s" etc."""
+Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male" or "female". age should be like "20s", "30s", "40s", "50s", "60s" etc. role MUST be in English."""
                 )
                 detect_chat.with_model("openai", "gpt-5.2")
                 
