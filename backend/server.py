@@ -142,6 +142,75 @@ def adjust_pitch(input_path: str, output_path: str, pitch_semitones: int):
         import shutil
         shutil.copy2(input_path, output_path)
 
+# Emotion-to-prosody mapping for more human-like TTS
+EMOTION_PROSODY = {
+    "happy": {"rate": "+8%", "pitch": "+5%", "volume": "+5%"},
+    "excited": {"rate": "+12%", "pitch": "+8%", "volume": "+10%"},
+    "sad": {"rate": "-10%", "pitch": "-5%", "volume": "-10%"},
+    "angry": {"rate": "+5%", "pitch": "-3%", "volume": "+15%"},
+    "scared": {"rate": "+10%", "pitch": "+10%", "volume": "-5%"},
+    "calm": {"rate": "-5%", "pitch": "-2%", "volume": "-5%"},
+    "serious": {"rate": "-3%", "pitch": "-5%", "volume": "+5%"},
+    "neutral": {"rate": "+0%", "pitch": "+0%", "volume": "+0%"},
+}
+
+def build_ssml(text: str, voice: str, rate: str, emotion: str = "neutral"):
+    """Build SSML with emotion prosody and natural pauses"""
+    prosody = EMOTION_PROSODY.get(emotion, EMOTION_PROSODY["neutral"])
+    
+    # Combine base rate with emotion rate
+    base_rate_num = int(rate.replace('%', '').replace('+', ''))
+    emotion_rate_num = int(prosody["rate"].replace('%', '').replace('+', ''))
+    final_rate = f"{base_rate_num + emotion_rate_num:+d}%"
+    
+    # Add natural pauses: after commas, periods, question marks
+    processed_text = text
+    for punct in ['។', '?', '!', '。', '？', '！']:
+        processed_text = processed_text.replace(punct, f'{punct}<break time="300ms"/>')
+    for punct in ['،', ',', '，', '、']:
+        processed_text = processed_text.replace(punct, f'{punct}<break time="150ms"/>')
+    
+    # Add a slight breath at the start
+    processed_text = f'<break time="100ms"/>{processed_text}'
+    
+    ssml = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="km-KH">
+  <voice name="{voice}">
+    <prosody rate="{final_rate}" pitch="{prosody['pitch']}" volume="{prosody['volume']}">
+      {processed_text}
+    </prosody>
+  </voice>
+</speak>"""
+    return ssml
+
+def extract_segment_audio(source_audio_path: str, start_sec: float, end_sec: float, output_path: str):
+    """Extract audio segment from source file using FFmpeg"""
+    duration = end_sec - start_sec
+    if duration <= 0:
+        return False
+    cmd = [
+        "ffmpeg", "-y", "-i", source_audio_path,
+        "-ss", str(start_sec), "-t", str(duration),
+        "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1",
+        output_path
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode == 0
+
+def mix_audio_with_background(tts_path: str, bg_path: str, output_path: str, bg_volume: float = 0.12):
+    """Mix TTS audio with background (original voice) at low volume"""
+    # bg_volume: 0.12 = 12% of original volume (subtle background)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", tts_path,
+        "-i", bg_path,
+        "-filter_complex",
+        f"[1:a]volume={bg_volume}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[out]",
+        "-map", "[out]",
+        output_path
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode == 0
+
 # FastAPI app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -627,8 +696,8 @@ ROLE DETECTION:
 IMPORTANT: You MUST identify at least some speakers as "male" if the dialogue contains male characters.
 
 Return ONLY JSON array:
-[{"idx": 0, "speaker": "SPEAKER_00", "gender": "male", "role": "Boss", "age": "40s"}, ...]
-Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male" or "female". age should be like "20s", "30s", "40s", "50s", "60s" etc. role MUST be in English."""
+[{"idx": 0, "speaker": "SPEAKER_00", "gender": "male", "role": "Boss", "age": "40s", "emotion": "angry"}, ...]
+Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male" or "female". age should be like "20s", "30s", "40s", "50s", "60s" etc. role MUST be in English. emotion must be one of: happy, excited, sad, angry, scared, calm, serious, neutral."""
                 )
                 detect_chat.with_model("openai", "gpt-5.2")
                 
@@ -661,6 +730,8 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
                                     segments[idx]["role"] = role
                                 if age:
                                     segments[idx]["age"] = age
+                                emotion = d.get("emotion", "neutral")
+                                segments[idx]["emotion"] = emotion
                         
                         # Verify: count unique speakers detected
                         unique_speakers = set(s["speaker"] for s in segments)
@@ -812,7 +883,8 @@ class PreviewRequest(BaseModel):
     text: str
     gender: str = "female"
     speed: int = 2
-    pitch: int = 0  # semitones: -12 to +12, negative = deeper/older
+    pitch: int = 0
+    emotion: str = "neutral"
 
 @api_router.post("/projects/{project_id}/preview-tts")
 async def preview_tts(project_id: str, req: PreviewRequest, authorization: str = Header(None)):
@@ -825,16 +897,22 @@ async def preview_tts(project_id: str, req: PreviewRequest, authorization: str =
     tts_path = os.path.join(tempfile.gettempdir(), f"preview_{uuid.uuid4().hex}.mp3")
     pitched_path = os.path.join(tempfile.gettempdir(), f"preview_pitched_{uuid.uuid4().hex}.mp3")
     try:
-        communicate = edge_tts.Communicate(req.text, voice=voice, rate=rate)
-        await communicate.save(tts_path)
-        # Apply pitch adjustment if needed
+        # Use SSML with emotion for preview too
+        ssml = build_ssml(req.text, voice, rate, req.emotion)
+        try:
+            communicate = edge_tts.Communicate(ssml, voice=voice)
+            await communicate.save(tts_path)
+        except Exception:
+            communicate = edge_tts.Communicate(req.text, voice=voice, rate=rate)
+            await communicate.save(tts_path)
+        
+        current_path = tts_path
         if req.pitch != 0:
             adjust_pitch(tts_path, pitched_path, req.pitch)
-            with open(pitched_path, "rb") as f:
-                audio_data = f.read()
-        else:
-            with open(tts_path, "rb") as f:
-                audio_data = f.read()
+            current_path = pitched_path
+        
+        with open(current_path, "rb") as f:
+            audio_data = f.read()
         return Response(content=audio_data, media_type="audio/mpeg")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -879,12 +957,20 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
 
         # Get original media duration for timeline alignment
         total_duration_ms = 0
+        original_audio_path = None
         try:
             file_data, _ = get_object(project["original_file_path"])
             with tempfile.NamedTemporaryFile(suffix=f".{project['original_filename'].split('.')[-1]}", delete=False) as tmp:
                 tmp.write(file_data)
                 tmp_path = tmp.name
             total_duration_ms = int(get_media_duration(tmp_path) * 1000)
+            # Extract original audio for mixing
+            original_audio_path = os.path.join(tempfile.gettempdir(), f"orig_audio_{uuid.uuid4().hex}.wav")
+            cmd_extract = ["ffmpeg", "-y", "-i", tmp_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1", original_audio_path]
+            extract_result = subprocess.run(cmd_extract, capture_output=True, text=True)
+            if extract_result.returncode != 0:
+                logger.warning(f"Original audio extraction failed, skipping mix")
+                original_audio_path = None
             os.unlink(tmp_path)
         except Exception as e:
             logger.warning(f"Could not get media duration: {e}")
@@ -915,12 +1001,11 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
             if not seg.get("translated"):
                 continue
 
-            # Use Edge TTS for Khmer (free, real Khmer pronunciation)
+            # Use Edge TTS with SSML for more human-like voice
             import edge_tts
             speaker = seg.get("speaker", "")
             seg_gender = seg.get("gender", "female")
             actor_pitch = 0
-            # Check actor gender and pitch
             for a in actors:
                 if a["id"] == speaker:
                     seg_gender = a.get("gender", seg_gender)
@@ -928,26 +1013,52 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
                     break
             
             edge_voice = "km-KH-PisethNeural" if seg_gender == "male" else "km-KH-SreymomNeural"
+            emotion = seg.get("emotion", "neutral")
+            rate_str = f"+{speed}%" if speed >= 0 else f"{speed}%"
             
             try:
                 tts_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.mp3")
                 pitched_path = os.path.join(tempfile.gettempdir(), f"tts_pitched_{uuid.uuid4().hex}.mp3")
-                communicate = edge_tts.Communicate(seg["translated"], voice=edge_voice, rate=f"+{speed}%" if speed >= 0 else f"{speed}%")
-                await communicate.save(tts_path)
+                mixed_path = os.path.join(tempfile.gettempdir(), f"tts_mixed_{uuid.uuid4().hex}.wav")
+                
+                # Build SSML with emotion prosody and natural pauses
+                ssml = build_ssml(seg["translated"], edge_voice, rate_str, emotion)
+                try:
+                    communicate = edge_tts.Communicate(ssml, voice=edge_voice)
+                    await communicate.save(tts_path)
+                except Exception:
+                    # Fallback to plain text if SSML fails
+                    communicate = edge_tts.Communicate(seg["translated"], voice=edge_voice, rate=rate_str)
+                    await communicate.save(tts_path)
+                
                 # Apply per-actor pitch adjustment
+                current_path = tts_path
                 if actor_pitch != 0:
                     adjust_pitch(tts_path, pitched_path, actor_pitch)
-                    audio_seg = AudioSegment.from_file(pitched_path, format="mp3")
-                    os.unlink(pitched_path)
-                else:
-                    audio_seg = AudioSegment.from_file(tts_path, format="mp3")
+                    current_path = pitched_path
+                
+                # Mix with original speaker audio (subtle background)
+                if original_audio_path and seg.get("start") is not None and seg.get("end") is not None:
+                    bg_seg_path = os.path.join(tempfile.gettempdir(), f"bg_seg_{uuid.uuid4().hex}.wav")
+                    if extract_segment_audio(original_audio_path, seg["start"], seg["end"], bg_seg_path):
+                        if mix_audio_with_background(current_path, bg_seg_path, mixed_path, bg_volume=0.10):
+                            current_path = mixed_path
+                        if os.path.exists(bg_seg_path):
+                            os.unlink(bg_seg_path)
+                
+                audio_seg = AudioSegment.from_file(current_path)
                 segment_audio_pairs.append((seg, audio_seg))
-                os.unlink(tts_path)
-            except Exception as e:
-                logger.warning(f"Edge TTS failed for segment: {e}")
-                for p in [tts_path, pitched_path]:
+                
+                # Cleanup temp files
+                for p in [tts_path, pitched_path, mixed_path]:
                     if os.path.exists(p):
                         os.unlink(p)
+            except Exception as e:
+                logger.warning(f"Edge TTS failed for segment: {e}")
+                for p in [tts_path, pitched_path, mixed_path]:
+                    if os.path.exists(p) and p:
+                        try: os.unlink(p)
+                        except: pass
 
         if not segment_audio_pairs:
             raise Exception("No audio generated")
@@ -978,6 +1089,11 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
 
         path = f"{APP_NAME}/audio/{user.user_id}/{project_id}/dubbed_{uuid.uuid4().hex}.wav"
         result = put_object(path, audio_bytes, "audio/wav")
+        
+        # Cleanup original audio temp file
+        if original_audio_path and os.path.exists(original_audio_path):
+            os.unlink(original_audio_path)
+        
         await db.projects.update_one(
             {"project_id": project_id},
             {"$set": {"dubbed_audio_path": result["path"], "status": "audio_ready", "updated_at": datetime.now(timezone.utc).isoformat()}}

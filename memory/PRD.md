@@ -64,6 +64,10 @@ Build Dubbing China to Khmer using python website following top trending design 
 - [x] FFmpeg pitch post-processing on TTS audio (preview + full generation)
 - [x] GPT auto-detects actor **age** (~20s, ~30s, ~40s, etc.) and **role** (Narrator, Boss, Wife) from dialogue
 - [x] Actor cards show role badge and age badge
+- [x] GPT detects **emotion** per line (happy, sad, angry, calm, excited, scared, serious)
+- [x] SSML prosody: voice speed/pitch/volume adjusts per emotion (happy=faster+higher, sad=slower+softer, angry=louder)
+- [x] Natural pauses: auto-insert breathing pauses after punctuation marks
+- [x] Original voice mixing: original speaker audio mixed at 10% volume behind Khmer TTS for natural feel
 
 ## Prioritized Backlog
 
