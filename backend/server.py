@@ -629,9 +629,6 @@ async def generate_video(project_id: str, authorization: str = Header(None)):
                 output_data = f.read()
             
             storage_path = f"{APP_NAME}/video/{user.user_id}/{project_id}/dubbed_{uuid.uuid4().hex}.{ext}"
-            result = put_object(output_data, output_data, f"video/{ext}")
-            
-            # Fix: Use correct path
             result = put_object(storage_path, output_data, f"video/{ext}")
             
             await db.projects.update_one(
