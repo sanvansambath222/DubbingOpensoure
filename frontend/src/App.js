@@ -10,7 +10,8 @@ import {
   MicrophoneStage, VideoCamera, SpeakerHigh, CaretRight, Waveform,
   GenderMale, GenderFemale, Trash, ArrowLeft, Subtitles, FilmStrip,
   Record, Stop, Microphone, Eye, ShareNetwork, Link, Copy, Globe,
-  MusicNote, FileText, Calendar, Clock
+  MusicNote, FileText, Calendar, Clock, MagnifyingGlass, Scissors,
+  ArrowsMerge, CopySimple, PencilSimple, Bell, Package, FloppyDisk
 } from "@phosphor-icons/react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -182,6 +183,27 @@ const Dashboard = () => {
     } catch { toast.error("Delete failed"); }
   };
 
+  const duplicateProject = async (e, pid) => {
+    e.stopPropagation();
+    try {
+      const r = await axios.post(`${API}/projects/${pid}/duplicate`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      setProjects([r.data, ...projects]);
+      toast.success("Project duplicated!");
+    } catch { toast.error("Duplicate failed"); }
+  };
+
+  const renameProject = async (e, pid) => {
+    e.stopPropagation();
+    const proj = projects.find(p => p.project_id === pid);
+    const newTitle = prompt("Rename project:", proj?.title || "");
+    if (!newTitle || newTitle === proj?.title) return;
+    try {
+      await axios.patch(`${API}/projects/${pid}`, { title: newTitle }, { headers: { Authorization: `Bearer ${token}` } });
+      setProjects(projects.map(p => p.project_id === pid ? { ...p, title: newTitle } : p));
+      toast.success("Renamed!");
+    } catch { toast.error("Rename failed"); }
+  };
+
   const statusColor = (s) => {
     const map = { created: 'text-slate-500', uploaded: 'text-yellow-500', transcribed: 'text-orange-400', translated: 'text-blue-400', audio_ready: 'text-green-400', completed: 'text-cyan-400', error: 'text-red-400' };
     return map[s] || 'text-slate-500';
@@ -244,11 +266,21 @@ const Dashboard = () => {
                 onClick={() => navigate(`/editor/${p.project_id}`)}
                 className="group bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 cursor-pointer hover:border-cyan-500/20 hover:bg-white/[0.04] transition-all">
                 <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-white font-semibold text-sm">{p.title}</h3>
-                  <button onClick={(e) => deleteProject(e, p.project_id)}
-                    className="text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
-                    <Trash className="w-4 h-4" />
-                  </button>
+                  <h3 className="text-white font-semibold text-sm flex-1 mr-2">{p.title}</h3>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={(e) => renameProject(e, p.project_id)} data-testid={`rename-project-${p.project_id}`}
+                      className="text-slate-600 hover:text-cyan-400 p-0.5" title="Rename">
+                      <PencilSimple className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={(e) => duplicateProject(e, p.project_id)} data-testid={`duplicate-project-${p.project_id}`}
+                      className="text-slate-600 hover:text-cyan-400 p-0.5" title="Duplicate">
+                      <CopySimple className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={(e) => deleteProject(e, p.project_id)} data-testid={`delete-project-${p.project_id}`}
+                      className="text-slate-600 hover:text-red-400 p-0.5" title="Delete">
+                      <Trash className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`text-[10px] font-semibold capitalize px-2 py-0.5 rounded-full ${statusColor(p.status)} ${statusBg(p.status)}`}>
@@ -352,6 +384,11 @@ const Editor = () => {
   const [shareToken, setShareToken] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [saveStatus, setSaveStatus] = useState("saved"); // "saved" | "saving" | "error"
+  const [selectedSegments, setSelectedSegments] = useState(new Set());
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState("");
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordTimerRef = useRef(null);
@@ -419,6 +456,7 @@ const Editor = () => {
       const r = await axios.post(`${API}/projects/${projectId}/transcribe-segments`, {}, { headers: { Authorization: `Bearer ${token}` } });
       setProject(r.data); setSegments(r.data.segments || []); setActors(r.data.actors || []);
       toast.success("Speakers detected!");
+      sendNotification("KhmerDub", "Speaker detection complete!");
     } catch (e) { toast.error(e.response?.data?.detail || "Detection failed"); }
     finally { setProcessingMsg(null); }
   };
@@ -429,6 +467,7 @@ const Editor = () => {
       const r = await axios.post(`${API}/projects/${projectId}/translate-segments`, {}, { headers: { Authorization: `Bearer ${token}` } });
       setProject(r.data); setSegments(r.data.segments || []);
       toast.success("Translation complete!");
+      sendNotification("KhmerDub", "Translation to Khmer complete!");
     } catch { toast.error("Translation failed"); }
     finally { setProcessingMsg(null); }
   };
@@ -440,6 +479,7 @@ const Editor = () => {
       setProject(r.data);
       if (r.data.dubbed_audio_path) loadFile(r.data.dubbed_audio_path, 'audio');
       toast.success("Audio generated!");
+      sendNotification("KhmerDub", "Khmer audio generation complete!");
     } catch { toast.error("Audio generation failed"); }
     finally { setProcessingMsg(null); }
   };
@@ -451,6 +491,7 @@ const Editor = () => {
       setProject(r.data);
       if (r.data.dubbed_video_path) loadFile(r.data.dubbed_video_path, 'video');
       toast.success("Video ready!");
+      sendNotification("KhmerDub", "Your dubbed video is ready!");
     } catch { toast.error("Video generation failed"); }
     finally { setProcessingMsg(null); }
   };
@@ -532,10 +573,111 @@ const Editor = () => {
 
   const updateSegment = async (idx, field, value) => {
     const updated = [...segments]; updated[idx][field] = value; setSegments(updated);
-    try { await axios.patch(`${API}/projects/${projectId}`, { segments: updated }, { headers: { Authorization: `Bearer ${token}` } }); } catch {}
+    setSaveStatus("saving");
+    try {
+      await axios.patch(`${API}/projects/${projectId}`, { segments: updated }, { headers: { Authorization: `Bearer ${token}` } });
+      setSaveStatus("saved");
+    } catch { setSaveStatus("error"); }
   };
 
   const fmt = (s) => { const m = Math.floor(s / 60); return `${m}:${(s % 60).toFixed(1).padStart(4, '0')}`; };
+
+  // Rename project inline
+  const saveTitle = async () => {
+    if (!titleInput.trim() || titleInput === project?.title) { setEditingTitle(false); return; }
+    setSaveStatus("saving");
+    try {
+      await axios.patch(`${API}/projects/${projectId}`, { title: titleInput.trim() }, { headers: { Authorization: `Bearer ${token}` } });
+      setProject({ ...project, title: titleInput.trim() });
+      setSaveStatus("saved");
+    } catch { setSaveStatus("error"); }
+    setEditingTitle(false);
+  };
+
+  // Merge segments
+  const mergeSelected = async () => {
+    if (selectedSegments.size < 2) { toast.error("Select 2+ segments to merge"); return; }
+    try {
+      const r = await axios.post(`${API}/projects/${projectId}/merge-segments`,
+        { segment_ids: [...selectedSegments] },
+        { headers: { Authorization: `Bearer ${token}` } });
+      setSegments(r.data.segments || []);
+      setSelectedSegments(new Set());
+      toast.success("Segments merged!");
+    } catch (e) { toast.error(e.response?.data?.detail || "Merge failed"); }
+  };
+
+  // Split segment
+  const splitSegment = async (idx) => {
+    try {
+      const r = await axios.post(`${API}/projects/${projectId}/split-segment`,
+        { segment_id: idx },
+        { headers: { Authorization: `Bearer ${token}` } });
+      setSegments(r.data.segments || []);
+      toast.success("Segment split!");
+    } catch (e) { toast.error(e.response?.data?.detail || "Split failed"); }
+  };
+
+  // Toggle segment selection
+  const toggleSelect = (idx) => {
+    const next = new Set(selectedSegments);
+    if (next.has(idx)) next.delete(idx); else next.add(idx);
+    setSelectedSegments(next);
+  };
+
+  // Batch export
+  const batchExport = async () => {
+    toast.info("Starting batch export...");
+    const downloads = [];
+    if (audioUrl) downloads.push({ url: audioUrl, name: `${project?.title || 'dubbed'}_khmer.wav` });
+    if (videoUrl) downloads.push({ url: videoUrl, name: `${project?.title || 'dubbed'}_khmer.mp4` });
+    // MP3
+    try {
+      const r = await axios.get(`${API}/projects/${projectId}/download-mp3`, {
+        headers: { Authorization: `Bearer ${token}` }, responseType: 'blob', timeout: 60000
+      });
+      const url = URL.createObjectURL(r.data);
+      downloads.push({ url, name: `${project?.title || 'dubbed'}_khmer.mp3` });
+    } catch {}
+    // SRT
+    if (segments.some(s => s.translated)) {
+      try {
+        const r = await axios.get(`${API}/projects/${projectId}/download-srt`, {
+          headers: { Authorization: `Bearer ${token}` }, responseType: 'blob'
+        });
+        const url = URL.createObjectURL(r.data);
+        downloads.push({ url, name: `${project?.title || 'subtitles'}_khmer.srt` });
+      } catch {}
+    }
+    downloads.forEach((d, i) => {
+      setTimeout(() => {
+        const a = document.createElement('a'); a.href = d.url; a.download = d.name; a.click();
+      }, i * 500);
+    });
+    toast.success(`Downloading ${downloads.length} files!`);
+  };
+
+  // Send browser notification
+  const sendNotification = (title, body) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/favicon.ico' });
+    }
+  };
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Filtered segments for search
+  const filteredSegments = searchQuery
+    ? segments.map((seg, idx) => ({ ...seg, _origIdx: idx })).filter(seg =>
+        (seg.original || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (seg.translated || '').toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : segments.map((seg, idx) => ({ ...seg, _origIdx: idx }));
 
   // Share link
   const createShareLink = async () => {
@@ -630,12 +772,30 @@ const Editor = () => {
           <button onClick={() => navigate("/dashboard")} className="text-slate-500 hover:text-white transition-colors p-1" data-testid="back-btn">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <span className="text-white font-semibold text-sm">{project?.title}</span>
+          {editingTitle ? (
+            <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)}
+              onBlur={saveTitle} onKeyDown={(e) => e.key === 'Enter' && saveTitle()}
+              autoFocus data-testid="title-input"
+              className="bg-white/[0.05] text-white font-semibold text-sm px-2 py-1 rounded-md border border-cyan-500/30 outline-none" />
+          ) : (
+            <span className="text-white font-semibold text-sm cursor-pointer hover:text-cyan-400 transition-colors flex items-center gap-1"
+              onClick={() => { setEditingTitle(true); setTitleInput(project?.title || ""); }}
+              data-testid="project-title">
+              {project?.title} <PencilSimple className="w-3 h-3 text-slate-600" />
+            </span>
+          )}
           {project?.detected_language && (
             <span className="text-[10px] text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded-full flex items-center gap-1" data-testid="detected-language">
               <Globe className="w-3 h-3" /> {project.detected_language?.toUpperCase()}
             </span>
           )}
+          {/* Auto-save indicator */}
+          <span data-testid="save-status" className={`text-[10px] font-medium flex items-center gap-1 ${
+            saveStatus === 'saving' ? 'text-amber-400' : saveStatus === 'error' ? 'text-red-400' : 'text-slate-600'
+          }`}>
+            <FloppyDisk className="w-3 h-3" />
+            {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'error' ? 'Save error' : 'Saved'}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <StepProgress currentStep={step} steps={["Upload", "Detect", "Translate", "Audio", "Video"]} />
@@ -825,6 +985,10 @@ const Editor = () => {
                   <Subtitles className="w-3 h-3" /> Download SRT Subtitle
                 </button>
               )}
+              <button onClick={batchExport} data-testid="batch-export-btn"
+                className="w-full py-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-semibold rounded-lg hover:bg-amber-500/20 flex items-center justify-center gap-1">
+                <Package className="w-3 h-3" /> Export All (MP3+MP4+SRT)
+              </button>
             </div>
           )}
         </div>
@@ -1002,39 +1166,78 @@ const Editor = () => {
             </div>
           )}
 
+          {/* Search & Tools Bar */}
+          {segments.length > 0 && (
+            <div className="bg-[#0a0e18]/50 border-b border-white/5 px-4 py-2 flex items-center gap-3">
+              <div className="relative flex-1 max-w-xs">
+                <MagnifyingGlass className="w-3.5 h-3.5 text-slate-600 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search segments..." data-testid="search-segments"
+                  className="w-full bg-white/[0.03] border border-white/[0.06] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-600 outline-none focus:border-cyan-500/30" />
+              </div>
+              {selectedSegments.size >= 2 && (
+                <button onClick={mergeSelected} data-testid="merge-segments-btn"
+                  className="px-3 py-1.5 bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[11px] font-semibold rounded-lg hover:bg-orange-500/20 flex items-center gap-1 transition-colors">
+                  <ArrowsMerge className="w-3.5 h-3.5" /> Merge ({selectedSegments.size})
+                </button>
+              )}
+              {selectedSegments.size > 0 && (
+                <button onClick={() => setSelectedSegments(new Set())}
+                  className="text-[10px] text-slate-500 hover:text-white transition-colors">
+                  Clear selection
+                </button>
+              )}
+              <span className="text-[10px] text-slate-600 ml-auto">
+                {searchQuery ? `${filteredSegments.length} of ${segments.length}` : `${segments.length} segments`}
+              </span>
+            </div>
+          )}
+
           {/* Subtitle Table */}
           <div className="flex-1 overflow-auto">
             <table className="w-full text-xs" data-testid="subtitle-table">
               <thead className="bg-[#0a0e18] sticky top-0 z-10">
                 <tr className="text-slate-600 text-[10px] uppercase tracking-wider">
-                  <th className="px-3 py-2.5 text-left w-8"></th>
-                  <th className="px-3 py-2.5 text-left w-10">#</th>
-                  <th className="px-3 py-2.5 text-left w-16">Start</th>
-                  <th className="px-3 py-2.5 text-left w-16">End</th>
-                  <th className="px-3 py-2.5 text-left w-16">Length</th>
-                  <th className="px-3 py-2.5 text-left">Chinese (Original)</th>
-                  <th className="px-3 py-2.5 text-left">Khmer (Translated)</th>
-                  <th className="px-3 py-2.5 text-left w-28">Speaker</th>
-                  <th className="px-3 py-2.5 text-left w-20">Voice</th>
-                  <th className="px-3 py-2.5 text-left w-36">Add Voice</th>
+                  <th className="px-1 py-2.5 text-center w-7"></th>
+                  <th className="px-2 py-2.5 text-left w-7"></th>
+                  <th className="px-2 py-2.5 text-left w-8">#</th>
+                  <th className="px-2 py-2.5 text-left w-14">Start</th>
+                  <th className="px-2 py-2.5 text-left w-14">End</th>
+                  <th className="px-2 py-2.5 text-left w-14">Length</th>
+                  <th className="px-2 py-2.5 text-left">Original</th>
+                  <th className="px-2 py-2.5 text-left">Khmer (Translated)</th>
+                  <th className="px-2 py-2.5 text-left w-24">Speaker</th>
+                  <th className="px-2 py-2.5 text-left w-16">Voice</th>
+                  <th className="px-2 py-2.5 text-left w-32">Add Voice</th>
+                  <th className="px-2 py-2.5 text-center w-8"></th>
                 </tr>
               </thead>
               <tbody>
                 {segments.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="text-center py-24 text-slate-600">
+                    <td colSpan={12} className="text-center py-24 text-slate-600">
                       <VideoCamera className="w-10 h-10 mx-auto mb-3 text-slate-700" weight="duotone" />
                       <p className="text-sm">Upload a video and detect speakers to get started</p>
                     </td>
                   </tr>
                 ) : (
-                  segments.map((seg, idx) => {
+                  filteredSegments.map((seg) => {
+                    const idx = seg._origIdx;
                     const actor = actors.find(a => a.id === seg.speaker);
                     const hasCustom = actor?.custom_voice || seg.custom_audio;
+                    const isSelected = selectedSegments.has(idx);
+                    const speakerIdx = actors.findIndex(a => a.id === seg.speaker);
+                    const rowColors = ['border-l-cyan-500/40', 'border-l-pink-500/40', 'border-l-amber-500/40', 'border-l-emerald-500/40', 'border-l-purple-500/40', 'border-l-rose-500/40'];
+                    const rowColor = rowColors[speakerIdx >= 0 ? speakerIdx % rowColors.length : 0];
                     return (
-                      <tr key={idx} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+                      <tr key={idx} className={`border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors border-l-2 ${rowColor} ${isSelected ? 'bg-cyan-500/5' : ''}`}
                         data-testid={`segment-row-${idx}`}>
-                        <td className="px-2 py-2.5">
+                        <td className="px-1 py-2">
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(idx)}
+                            data-testid={`segment-select-${idx}`}
+                            className="w-3 h-3 rounded border-white/20 bg-white/5 text-cyan-500 focus:ring-cyan-500/30 cursor-pointer" />
+                        </td>
+                        <td className="px-1 py-2">
                           <button onClick={() => previewLine(idx)} disabled={previewingIdx !== null}
                             data-testid={`segment-play-${idx}`}
                             className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
@@ -1135,6 +1338,13 @@ const Editor = () => {
                               </div>
                             );
                           })()}
+                        </td>
+                        <td className="px-1 py-2 text-center">
+                          <button onClick={() => splitSegment(idx)} data-testid={`segment-split-${idx}`}
+                            title="Split segment"
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-slate-700 hover:text-amber-400 hover:bg-white/5 transition-all">
+                            <Scissors className="w-3 h-3" />
+                          </button>
                         </td>
                       </tr>
                     );

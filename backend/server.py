@@ -270,6 +270,106 @@ async def delete_project(project_id: str, authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="Project not found")
     return {"success": True}
 
+# Duplicate project
+@api_router.post("/projects/{project_id}/duplicate")
+async def duplicate_project(project_id: str, authorization: str = Header(None)):
+    user = await get_current_user(authorization)
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    new_id = f"proj_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc).isoformat()
+    new_doc = {**project}
+    new_doc["project_id"] = new_id
+    new_doc["title"] = f"{project['title']} (Copy)"
+    new_doc["share_token"] = None
+    new_doc["dubbed_audio_path"] = None
+    new_doc["dubbed_video_path"] = None
+    new_doc["status"] = "translated" if project.get("segments") and any(s.get("translated") for s in project.get("segments", [])) else "transcribed" if project.get("segments") else "created"
+    new_doc["created_at"] = now
+    new_doc["updated_at"] = now
+    await db.projects.insert_one(new_doc)
+    return await db.projects.find_one({"project_id": new_id}, {"_id": 0})
+
+# Merge segments
+class MergeRequest(BaseModel):
+    segment_ids: List[int]
+
+@api_router.post("/projects/{project_id}/merge-segments")
+async def merge_segments(project_id: str, req: MergeRequest, authorization: str = Header(None)):
+    user = await get_current_user(authorization)
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    segments = project.get("segments", [])
+    ids = sorted(req.segment_ids)
+    if len(ids) < 2 or any(i < 0 or i >= len(segments) for i in ids):
+        raise HTTPException(status_code=400, detail="Invalid segment IDs")
+    # Merge: take first start, last end, concat text
+    merged_seg = {
+        "id": ids[0],
+        "start": segments[ids[0]].get("start", 0),
+        "end": segments[ids[-1]].get("end", 0),
+        "original": " ".join(segments[i].get("original", "") for i in ids).strip(),
+        "translated": " ".join(segments[i].get("translated", "") for i in ids).strip(),
+        "speaker": segments[ids[0]].get("speaker", "SPEAKER_00"),
+        "gender": segments[ids[0]].get("gender", "female"),
+        "voice": segments[ids[0]].get("voice", "sophea"),
+    }
+    new_segments = []
+    skip = set(ids)
+    for i, seg in enumerate(segments):
+        if i == ids[0]:
+            new_segments.append(merged_seg)
+        elif i not in skip:
+            new_segments.append(seg)
+    # Re-index
+    for i, seg in enumerate(new_segments):
+        seg["id"] = i
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"segments": new_segments, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+
+# Split segment
+class SplitRequest(BaseModel):
+    segment_id: int
+
+@api_router.post("/projects/{project_id}/split-segment")
+async def split_segment(project_id: str, req: SplitRequest, authorization: str = Header(None)):
+    user = await get_current_user(authorization)
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    segments = project.get("segments", [])
+    idx = req.segment_id
+    if idx < 0 or idx >= len(segments):
+        raise HTTPException(status_code=400, detail="Invalid segment ID")
+    seg = segments[idx]
+    mid_time = (seg.get("start", 0) + seg.get("end", 0)) / 2
+    orig = seg.get("original", "")
+    trans = seg.get("translated", "")
+    # Split text at midpoint
+    orig_words = orig.split() if " " in orig else list(orig)
+    trans_words = trans.split() if " " in trans else list(trans)
+    mid_o = len(orig_words) // 2
+    mid_t = len(trans_words) // 2
+    joiner_o = " " if " " in orig else ""
+    joiner_t = " " if " " in trans else ""
+    seg1 = {**seg, "end": round(mid_time, 1), "original": joiner_o.join(orig_words[:mid_o]) if orig_words else "", "translated": joiner_t.join(trans_words[:mid_t]) if trans_words else ""}
+    seg2 = {**seg, "start": round(mid_time, 1), "original": joiner_o.join(orig_words[mid_o:]) if orig_words else "", "translated": joiner_t.join(trans_words[mid_t:]) if trans_words else ""}
+    seg2.pop("custom_audio", None)
+    seg1.pop("custom_audio", None)
+    new_segments = segments[:idx] + [seg1, seg2] + segments[idx+1:]
+    for i, s in enumerate(new_segments):
+        s["id"] = i
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"segments": new_segments, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+
 # File upload
 @api_router.post("/projects/{project_id}/upload")
 async def upload_file(project_id: str, file: UploadFile = File(...), authorization: str = Header(None)):
