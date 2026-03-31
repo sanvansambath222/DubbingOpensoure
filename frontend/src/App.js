@@ -1097,20 +1097,21 @@ const Editor = () => {
                           </select>
                         )}
 
-                        {/* Per-actor Pitch slider */}
+                        {/* Per-actor Voice Age */}
                         <div>
-                          <div className="flex items-center justify-between mb-0.5">
+                          <div className="flex items-center justify-between mb-1">
                             <span className="text-[9px] text-slate-500 font-semibold">Voice Age</span>
-                            <span className={`text-[9px] font-bold ${(actor.pitch || 0) < 0 ? 'text-amber-400' : (actor.pitch || 0) > 0 ? 'text-purple-400' : 'text-slate-500'}`}>
-                              ~{Math.round(30 - (actor.pitch || 0) * 5)} years old
-                            </span>
-                          </div>
-                          <input type="range" min={-6} max={6} value={actor.pitch || 0}
-                            onChange={(e) => updateActor(actor.id, 'pitch', Number(e.target.value))}
-                            data-testid={`actor-pitch-${actor.id}`}
-                            className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:rounded-full" />
-                          <div className="flex justify-between text-[8px] text-slate-700 mt-0.5">
-                            <span>~60 yrs</span><span>~30 yrs</span><span>~0 yrs</span>
+                            <div className="flex items-center gap-1">
+                              <input type="number" min={5} max={80} value={Math.round(30 - (actor.pitch || 0) * 5)}
+                                onChange={(e) => {
+                                  const age = Math.max(5, Math.min(80, Number(e.target.value) || 30));
+                                  const pitch = Math.round((30 - age) / 5);
+                                  updateActor(actor.id, 'pitch', Math.max(-6, Math.min(6, pitch)));
+                                }}
+                                data-testid={`actor-age-input-${actor.id}`}
+                                className="w-10 bg-white/[0.05] border border-white/[0.1] rounded text-center text-[10px] text-white font-bold py-0.5 outline-none focus:border-amber-500/40" />
+                              <span className="text-[9px] text-slate-500">yrs</span>
+                            </div>
                           </div>
                         </div>
                         {actor.custom_voice ? (
