@@ -1254,23 +1254,6 @@ const Editor = () => {
                           </select>
                         )}
 
-                        {/* Per-actor Voice Age */}
-                        <div className="flex items-center justify-between">
-                          <span className={`text-[8px] font-semibold ${d?'text-zinc-400':'text-zinc-600'}`}>Voice Age</span>
-                          <div className="flex items-center gap-1">
-                            <input type="number" min={5} max={80}
-                              defaultValue={actor.age ? parseInt(actor.age) || 30 : Math.round(30 - (actor.pitch || 0) * 5)}
-                              onBlur={(e) => {
-                                const age = Math.max(5, Math.min(80, Number(e.target.value) || 30));
-                                const pitch = Math.round((30 - age) / 5);
-                                updateActor(actor.id, 'pitch', Math.max(-6, Math.min(6, pitch)));
-                              }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-                              data-testid={`actor-age-input-${actor.id}`}
-                              className={`w-9 border rounded text-center text-[9px] font-bold py-0.5 outline-none ${d?'bg-zinc-700 border-zinc-600 text-white focus:border-amber-400':'bg-white border-zinc-300 text-zinc-900 focus:border-amber-500'}`} />
-                            <span className={`text-[8px] ${d?'text-zinc-400':'text-zinc-500'}`}>yrs</span>
-                          </div>
-                        </div>
                         {actor.custom_voice ? (
                           <div className={`flex items-center gap-1 px-2 py-1 rounded-md border ${d?'bg-emerald-900/20 border-emerald-700/30':'bg-emerald-50 border-emerald-200'}`}>
                             <CheckCircle className={`w-3 h-3 flex-shrink-0 ${d?'text-emerald-400':'text-emerald-600'}`} weight="fill" />
