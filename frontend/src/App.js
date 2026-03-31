@@ -688,23 +688,31 @@ const Editor = () => {
                                 Remove
                               </button>
                             </div>
-                          ) : (
-                            <label data-testid={`segment-upload-voice-${idx}`}
-                              className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
-                              <input type="file" accept="audio/*" className="hidden"
-                                onChange={async (e) => {
-                                  const file = e.target.files?.[0]; if (!file) return;
-                                  const fd = new FormData(); fd.append('file', file); fd.append('segment_id', String(idx));
-                                  try {
-                                    const r = await axios.post(`${API}/projects/${projectId}/upload-segment-audio`, fd,
-                                      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
-                                    const updated = [...segments]; updated[idx].custom_audio = r.data.audio_path; setSegments(updated);
-                                    toast.success("Voice uploaded for this segment!");
-                                  } catch { toast.error("Upload failed"); }
-                                }} />
-                              <Upload className="w-3 h-3" /> Add Voice
-                            </label>
-                          )}
+                          ) : (() => {
+                            const len = (seg.end || 0) - (seg.start || 0);
+                            return (
+                              <div className="flex flex-col gap-1">
+                                <label data-testid={`segment-upload-voice-${idx}`}
+                                  className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
+                                  <input type="file" accept="audio/*" className="hidden"
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0]; if (!file) return;
+                                      const fd = new FormData(); fd.append('file', file); fd.append('segment_id', String(idx));
+                                      try {
+                                        const r = await axios.post(`${API}/projects/${projectId}/upload-segment-audio`, fd,
+                                          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
+                                        const updated = [...segments]; updated[idx].custom_audio = r.data.audio_path; setSegments(updated);
+                                        toast.success("Voice uploaded for this segment!");
+                                      } catch { toast.error("Upload failed"); }
+                                    }} />
+                                  <Upload className="w-3 h-3" /> Add Voice
+                                </label>
+                                <span className="text-amber-400/70 text-[9px]">
+                                  {len < 3 ? `Record ~${len.toFixed(1)}s (short)` : len < 8 ? `Record ~${len.toFixed(1)}s` : `Record ~${len.toFixed(0)}s (long)`}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );
