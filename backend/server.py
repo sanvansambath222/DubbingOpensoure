@@ -417,7 +417,7 @@ async def upload_file(project_id: str, file: UploadFile = File(...), authorizati
 # Transcribe audio/video
 @api_router.post("/projects/{project_id}/transcribe")
 async def transcribe_project(project_id: str, authorization: str = Header(None)):
-    """Transcribe Chinese audio from uploaded file using Whisper"""
+    """Transcribe Chinese audio from uploaded file using Whisper with gender detection"""
     from emergentintegrations.llm.openai import OpenAISpeechToText
     
     user = await get_current_user(authorization)
@@ -442,41 +442,90 @@ async def transcribe_project(project_id: str, authorization: str = Header(None))
         with tempfile.TemporaryDirectory() as temp_dir:
             ext = project["original_filename"].split(".")[-1] if "." in project["original_filename"] else "mp4"
             input_path = os.path.join(temp_dir, f"input.{ext}")
-            audio_path = os.path.join(temp_dir, "audio.mp3")
+            audio_path = os.path.join(temp_dir, "audio.wav")
             
             # Write input file
             with open(input_path, "wb") as f:
                 f.write(file_data)
             
-            # Extract audio if video
+            # Extract audio if video (use wav for gender detection)
             if project.get("file_type") == "video":
-                extract_audio_from_video(input_path, audio_path)
+                cmd = ["ffmpeg", "-y", "-i", input_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path]
+                subprocess.run(cmd, capture_output=True)
                 
                 # Upload extracted audio to storage
                 with open(audio_path, "rb") as f:
                     audio_data = f.read()
-                audio_storage_path = f"{APP_NAME}/audio/{user.user_id}/{project_id}/extracted_{uuid.uuid4().hex}.mp3"
-                put_object(audio_storage_path, audio_data, "audio/mpeg")
+                audio_storage_path = f"{APP_NAME}/audio/{user.user_id}/{project_id}/extracted_{uuid.uuid4().hex}.wav"
+                put_object(audio_storage_path, audio_data, "audio/wav")
                 
                 await db.projects.update_one(
                     {"project_id": project_id},
                     {"$set": {"extracted_audio_path": audio_storage_path}}
                 )
             else:
-                audio_path = input_path
+                # Convert to wav for processing
+                cmd = ["ffmpeg", "-y", "-i", input_path, "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path]
+                subprocess.run(cmd, capture_output=True)
             
-            # Transcribe using Whisper
+            # Gender detection using inaSpeechSegmenter
+            gender_segments = []
+            try:
+                from inaSpeechSegmenter import Segmenter
+                seg = Segmenter()
+                segmentation = seg(audio_path)
+                
+                # segmentation format: [(label, start, end), ...]
+                # labels: 'female', 'male', 'noEnergy', 'noise', 'music'
+                for label, start, end in segmentation:
+                    if label in ['female', 'male']:
+                        gender_segments.append({
+                            'gender': 'F' if label == 'female' else 'M',
+                            'start': start,
+                            'end': end
+                        })
+                logger.info(f"Gender segments detected: {gender_segments}")
+            except Exception as e:
+                logger.warning(f"Gender detection failed: {e}")
+            
+            # Transcribe using Whisper with timestamps
             stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
             
             with open(audio_path, "rb") as audio_file:
                 response = await stt.transcribe(
                     file=audio_file,
                     model="whisper-1",
-                    language="zh",  # Chinese
-                    response_format="text"
+                    language="zh",
+                    response_format="verbose_json"
                 )
             
-            transcribed_text = response if isinstance(response, str) else response.text
+            # Process transcription with gender markers
+            if gender_segments and hasattr(response, 'segments'):
+                # Match transcription segments with gender
+                marked_text = ""
+                current_gender = None
+                
+                for seg in response.segments:
+                    seg_start = seg.get('start', 0)
+                    seg_text = seg.get('text', '')
+                    
+                    # Find gender for this segment
+                    seg_gender = None
+                    for gs in gender_segments:
+                        if gs['start'] <= seg_start < gs['end']:
+                            seg_gender = gs['gender']
+                            break
+                    
+                    # Add gender marker if changed
+                    if seg_gender and seg_gender != current_gender:
+                        marked_text += f"[{seg_gender}]"
+                        current_gender = seg_gender
+                    
+                    marked_text += seg_text
+                
+                transcribed_text = marked_text if marked_text else response.text
+            else:
+                transcribed_text = response if isinstance(response, str) else response.text
             
             await db.projects.update_one(
                 {"project_id": project_id},
@@ -500,7 +549,7 @@ async def transcribe_project(project_id: str, authorization: str = Header(None))
 # Translation
 @api_router.post("/projects/{project_id}/translate")
 async def translate_project(project_id: str, authorization: str = Header(None)):
-    """Translate Chinese text to Khmer"""
+    """Translate Chinese text to Khmer, preserving speaker markers"""
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     
     user = await get_current_user(authorization)
@@ -518,14 +567,28 @@ async def translate_project(project_id: str, authorization: str = Header(None)):
     )
     
     try:
+        # Check if text has gender markers
+        original_text = project["original_text"]
+        has_markers = "[F]" in original_text or "[M]" in original_text
+        
+        if has_markers:
+            # Translate with marker preservation
+            system_msg = """You are a professional Chinese to Khmer translator.
+Translate the given Chinese text to Khmer accurately while preserving the meaning and tone.
+IMPORTANT: Keep all [F] and [M] markers exactly as they are - do not translate or remove them.
+[F] marks female speaker, [M] marks male speaker.
+Only output the Khmer translation with preserved markers, nothing else."""
+        else:
+            system_msg = "You are a professional Chinese to Khmer translator. Translate the given Chinese text to Khmer accurately while preserving the meaning and tone. Only output the Khmer translation, nothing else."
+        
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"translate_{project_id}",
-            system_message="You are a professional Chinese to Khmer translator. Translate the given Chinese text to Khmer accurately while preserving the meaning and tone. Only output the Khmer translation, nothing else."
+            system_message=system_msg
         )
         chat.with_model("openai", "gpt-5.2")
         
-        user_message = UserMessage(text=project["original_text"])
+        user_message = UserMessage(text=original_text)
         translated = await chat.send_message(user_message)
         
         await db.projects.update_one(

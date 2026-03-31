@@ -763,15 +763,16 @@ const Editor = () => {
                   {transcribing ? (
                     <>
                       <Spinner className="w-4 h-4 animate-spin" />
-                      Transcribing with Whisper...
+                      Transcribing + Detecting Speakers...
                     </>
                   ) : (
                     <>
                       <SpeakerHigh className="w-4 h-4" weight="bold" />
-                      Auto-Transcribe (Whisper)
+                      Auto-Transcribe + Gender Detection
                     </>
                   )}
                 </button>
+                <p className="text-xs text-[#52525B] mt-2">Auto-detects male/female speakers and adds [M]/[F] markers</p>
               </div>
             )}
 
