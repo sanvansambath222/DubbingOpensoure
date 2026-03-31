@@ -1,103 +1,120 @@
 {
-  "theme": "dark",
-  "archetype": "Archetype 4 (Swiss & High-Contrast) - Dark Mode Variation",
-  "colors": {
-    "background": "bg-[#0A0A0B]",
-    "surface": "bg-[#141415]",
-    "surface_hover": "bg-[#1F1F22]",
-    "border": "border-[#27272A]",
-    "primary": "bg-[#0055FF]",
-    "primary_hover": "bg-[#0044CC]",
-    "primary_text": "text-white",
-    "text_main": "text-[#FAFAFA]",
-    "text_muted": "text-[#A1A1AA]",
-    "status": {
-      "success": "text-[#34D399] bg-[#34D399]/10",
-      "processing": "text-[#FBBF24] bg-[#FBBF24]/10",
-      "error": "text-[#F87171] bg-[#F87171]/10"
-    }
-  },
+  "theme": "light",
+  "archetype": "Archetype 4: Swiss & High-Contrast",
+  "domain_context": "Productivity SaaS, Video Dubbing, AI Tool",
+  "emotional_tone": "Professional, authoritative, precise, functional, transparent",
   "typography": {
+    "anti_default_rule_applied": true,
     "fonts": {
-      "heading": "'Outfit', sans-serif",
-      "body": "'Manrope', sans-serif",
-      "mono": "'JetBrains Mono', monospace"
+      "headings": "Cabinet Grotesk, Outfit",
+      "body": "IBM Plex Sans, Manrope",
+      "monospace": "JetBrains Mono"
     },
     "hierarchy": {
-      "h1": "text-4xl sm:text-5xl font-light tracking-tighter text-white",
-      "h2": "text-2xl sm:text-3xl font-medium tracking-tight text-white",
-      "h3": "text-xl sm:text-2xl font-medium tracking-tight text-white",
-      "h4": "text-lg sm:text-xl font-medium tracking-tight text-white",
-      "body": "text-base leading-relaxed text-[#A1A1AA]",
-      "label": "text-xs font-bold uppercase tracking-[0.2em] text-[#71717A]"
+      "h1_hero": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter font-medium text-zinc-950",
+      "h2_section": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-medium text-zinc-950",
+      "h3_subsection": "text-xl sm:text-2xl tracking-tight font-medium text-zinc-950",
+      "h4_widget": "text-lg sm:text-xl font-medium text-zinc-900",
+      "body": "text-sm md:text-base leading-relaxed text-zinc-700",
+      "labels_overlines": "text-xs font-bold uppercase tracking-[0.2em] text-zinc-500",
+      "timecodes_data": "font-mono text-xs tracking-tight text-zinc-800"
     }
   },
-  "spacing": {
-    "container_padding": "p-6 md:p-12",
-    "grid_gap": "gap-6 md:gap-8",
-    "section_gap": "gap-16 md:gap-24"
-  },
-  "components": {
-    "buttons": {
-      "primary": "inline-flex items-center justify-center px-6 py-3 bg-[#0055FF] text-white text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,85,255,0.4)]",
-      "secondary": "inline-flex items-center justify-center px-6 py-3 bg-transparent text-white text-sm font-medium border border-[#27272A] transition-all duration-300 hover:bg-[#27272A] hover:text-white"
+  "colors": {
+    "base": {
+      "background": "#FFFFFF",
+      "surface": "#FAFAFA",
+      "surface_hover": "#F4F4F5"
     },
-    "cards": {
-      "dashboard_item": "group relative flex flex-col p-6 bg-[#141415] border border-[#27272A] transition-all duration-300 hover:border-[#3F3F46] hover:-translate-y-1 hover:shadow-2xl overflow-hidden",
-      "glass_header": "fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-[#0A0A0B]/70 border-b border-white/5 saturate-150"
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#52525B",
+      "muted": "#A1A1AA"
     },
-    "inputs": {
-      "upload_zone": "relative flex flex-col items-center justify-center p-16 md:p-24 border-2 border-dashed border-[#27272A] bg-[#0A0A0B] transition-all duration-300 hover:border-[#0055FF]/50 hover:bg-[#0055FF]/5 cursor-pointer overflow-hidden",
-      "text_field": "w-full bg-[#141415] border border-[#27272A] text-white px-4 py-3 text-sm focus:outline-none focus:border-[#0055FF] focus:ring-1 focus:ring-[#0055FF] transition-all placeholder:text-[#71717A]"
+    "structural": {
+      "border": "rgba(0, 0, 0, 0.1)",
+      "border_hover": "rgba(0, 0, 0, 0.2)"
+    },
+    "accents": {
+      "primary_action": "#0A0A0A",
+      "primary_action_text": "#FFFFFF",
+      "primary_action_hover": "#27272A",
+      "success": "#10B981",
+      "danger": "#EF4444",
+      "boy_gender": "#007AFF",
+      "girl_gender": "#FF2D55",
+      "international_klein_blue": "#002FA7"
     }
   },
-  "layouts": {
-    "dashboard_grid": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6",
-    "editor_split": "grid grid-cols-1 lg:grid-cols-12 gap-8 items-start",
-    "editor_video_col": "lg:col-span-8 flex flex-col gap-6",
-    "editor_script_col": "lg:col-span-4 flex flex-col gap-6 h-full border-l border-[#27272A] pl-0 lg:pl-8"
+  "surfaces_and_micro_themes": {
+    "marketing_header": "Crystal Glass variant: backdrop-blur-xl bg-white/70, 1px delicate border-b border-black/10, shadow-sm",
+    "dashboard_cards": "Flat solid background #FFFFFF, border-collapse, 1px subtle border-black/10, NO shadow. Hover: slight lift (-translate-y-1), border color darkens.",
+    "editor_panels": "Cardless, rectangular, dense styles. Solid backgrounds, separated by 1px border-r or border-b border-black/10.",
+    "modals_dialogs": "Solid white background, sharp 1px border border-black/10, dark overlay bg-black/50 backdrop-blur-sm"
   },
-  "media": {
-    "login_background": {
-      "url": "https://images.pexels.com/photos/33923597/pexels-photo-33923597.jpeg",
-      "description": "Professional podcast and video recording setup. Use as a moody background with heavy black overlay for the Auth page."
+  "spacing_and_layout": {
+    "marketing_pages": {
+      "strategy": "Generous Spacing Philosophy, Asymmetrical 'Tetris' Grid",
+      "container_padding": "py-20 md:py-32 px-6 md:px-12",
+      "gap": "gap-8 to gap-12",
+      "hero_span": "col-span-full md:col-span-8 row-span-2"
     },
-    "avatar_placeholder": {
-      "url": "https://images.unsplash.com/photo-1672462478040-a5920e2c23d8",
-      "description": "User profile avatar."
-    },
-    "video_thumbnails": [
-      {
-         "url": "https://images.unsplash.com/photo-1602973240044-ac77578f6dc5",
-         "description": "Red recording light for in-progress or demo videos."
-      },
-      {
-         "url": "https://images.pexels.com/photos/30622038/pexels-photo-30622038.jpeg",
-         "description": "Podcast recording session thumbnail."
-      }
-    ]
+    "dashboards_and_editor": {
+      "strategy": "Dense 'Control Room' Grid, Strict Hierarchy, Every pixel utilized",
+      "container_padding": "p-2 to p-6",
+      "gap": "gap-1 to gap-4",
+      "border_radius": "rounded-sm (max 4px) to rounded-none for a sharper, technical feel",
+      "table_rows": "h-10, text-sm, compact padding, explicit border-b border-black/5"
+    }
+  },
+  "component_strategy": {
+    "buttons": "Flat, sharp corners (rounded-sm or rounded-none). Primary: bg-zinc-950 text-white hover:bg-zinc-800 hover:text-white. Secondary: bg-white text-zinc-950 border border-zinc-200 hover:bg-zinc-100 hover:text-zinc-950.",
+    "inputs_forms": "Shadcn UI heavily customized. Minimal padding, 1px border-black/10, focus:ring-1 focus:ring-black focus:border-black, rounded-none or rounded-sm.",
+    "icons": "Phosphor Icons (@phosphor-icons/react) for dense dashboards, ensuring clarity and technical precision at small sizes.",
+    "tables": "Dense rows, JetBrains Mono for numbers/timecodes, sticky headers, subtle alternating row backgrounds or hover states.",
+    "video_player": "Minimalist controls, integrated directly into the grid without heavy wrapper cards. Timecode in monospace."
   },
   "motion_and_interactions": {
-    "hover_state": "All interactive elements must scale slightly (`hover:-translate-y-0.5`) and transition border colors.",
-    "page_transition": "Use Framer Motion. Fade in with a slight upward translation (`initial={{opacity:0, y:20}} animate={{opacity:1, y:0}}`).",
-    "loading_state": "Use a continuous left-to-right 'tracing beam' gradient on the border of the upload/processing container. Do not use standard spinner.",
-    "focus_state": "focus:outline-none focus:ring-2 focus:ring-[#0055FF]/50"
+    "hover_states": "Must explicitly set text color on hover (e.g., hover:bg-zinc-100 hover:text-black).",
+    "focus_states": "High contrast focus rings (focus:ring-2 focus:ring-black focus:ring-offset-1).",
+    "transitions": "transition-transform 0.2s ease, transition-colors 0.2s ease. No 'transition-all'.",
+    "marketing_motion": "Framer Motion for entrance staggers, 'Tracing Beam' border effects on feature cards."
+  },
+  "media_and_images": {
+    "rules": "No generic overlays. Max overlay opacity bg-black/30 or bg-white/40. No placeholder images.",
+    "image_urls": {
+      "hero_abstract_soundwave": {
+        "url": "https://images.unsplash.com/photo-1765046255478-55efc763637c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMHNvdW5kJTIwd2F2ZXMlMjBtaW5pbWFsfGVufDB8fHx8MTc3NDk1Mzc3Mnww&ixlib=rb-4.1.0&q=85",
+        "category": "Hero Background / Landing Page",
+        "description": "Abstract white wavy lines with a minimal grid pattern. Excellent for a clean, light-themed tech hero section."
+      },
+      "video_editor_screen": {
+        "url": "https://images.unsplash.com/photo-1604611364011-706e9e1f2573?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAxODF8MHwxfHNlYXJjaHwxfHx2aWRlbyUyMGVkaXRvciUyMHNjcmVlbiUyMG1vbml0b3J8ZW58MHx8fHwxNzc0OTUzNzczfDA&ixlib=rb-4.1.0&q=85",
+        "category": "Feature Showcase / Marketing",
+        "description": "Black flat screen computer monitor, good for showcasing the app UI inside a device mockup."
+      },
+      "professional_portrait": {
+        "url": "https://images.pexels.com/photos/29995570/pexels-photo-29995570.jpeg",
+        "category": "Testimonials / Avatars",
+        "description": "Elegant portrait of an adult businessman in a dark suit, clean background."
+      },
+      "sound_microphone": {
+        "url": "https://images.pexels.com/photos/13044703/pexels-photo-13044703.jpeg",
+        "category": "Feature Illustration / App Context",
+        "description": "Close-up of a black microphone against a white backdrop, perfect for audio recording/dubbing themes."
+      }
+    }
+  },
+  "testing": {
+    "attributes": "All interactive and key informational elements MUST include a data-testid attribute using kebab-case, role-based naming."
   },
   "instructions_to_main_agent": [
-    "You are building for a JS (JSX) environment, NOT TSX. Keep everything in standard modern JavaScript.",
-    "Install Google Fonts in index.css: @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap');",
-    "Apply fonts in tailwind.config.js extending fontFamily: outfit: ['Outfit', 'sans-serif'], manrope: ['Manrope', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'].",
-    "Install and use @phosphor-icons/react for icons. Use Duotone weights to provide a high-end, technical aesthetic.",
-    "Design pattern: The application should look like HeyGen AI Editor. High contrast, precise, data-rich but clean. Do not use generic 'Cards'. Use raw borders and grids.",
-    "The Editor View (split screen) is the focal point. The script translation panel (Chinese to Khmer) must look like an inline teleprompter: stacked original (muted text) and translated (bright text) segments.",
-    "The Hero/Auth screen should have the login background image heavily overlaid (`bg-[#0A0A0B]/85`) to ensure the Google Login button pops.",
-    "The Upload Dropzone must have immense generous spacing (p-24) and a dashed border. Make it a massive target for the user.",
-    "No teal or purple-blue gradients. We are strictly using Electric Blue (#0055FF) on a Deep Obsidian (#0A0A0B) background.",
-    "Never center text by default. Align left for paragraphs and labels to ensure maximum readability and tension.",
-    "All buttons must have a clear hover state that shifts background color and adds a subtle text shadow or box shadow."
-  ],
-  "accessibility": {
-    "contrast": "Ensure all text against the #0A0A0B background has at least a 4.5:1 ratio. Muted text must not be darker than #A1A1AA.",
-    "testing_ids": "Add `data-testid` to all major components: `google-login-button`, `upload-dropzone`, `video-player`, `script-panel`, `download-dubbed-button`."
-  }
+    "Install and use @phosphor-icons/react for icons.",
+    "Do not use generic font Inter for headings; configure Tailwind to use Outfit for headings and IBM Plex Sans for body text.",
+    "Apply Archetype 4 (Swiss & High-Contrast) strictly: Use stark white (#FFFFFF) backgrounds with 1px black borders (rgba(0,0,0,0.1)) to define areas instead of drop shadows.",
+    "For the Editor page, use a 'Control Room' grid layout: dense, cardless, and utilizing the full screen width and height. Avoid soft rounded corners.",
+    "Use JetBrains Mono for all timecodes, lengths, and technical data in the subtitle table.",
+    "For the Actor Cards in the Sidebar, use the designated accent colors (Boy: #007AFF, Girl: #FF2D55) as high-contrast flat backgrounds or solid border accents.",
+    "Ensure all buttons have explicit text colors set for both normal and hover states to maintain accessibility."
+  ]
 }
