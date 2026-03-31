@@ -14,11 +14,12 @@ Build Dubbing China to Khmer using python website following top trending design 
 - Share dubbed project via public link
 
 ## Design
-- **Theme**: Swiss & High-Contrast (Light theme)
+- **Theme**: Swiss & High-Contrast with Dark Mode support
 - **Fonts**: Outfit (headings), IBM Plex Sans (body), JetBrains Mono (code/timestamps)
-- **Colors**: White backgrounds, zinc-950 text, emerald accents for success, sharp corners (rounded-sm)
+- **Colors**: White/Zinc-950 backgrounds, zinc text, emerald accents, sharp corners (rounded-sm)
+- **Dark Mode**: Full dark mode with toggle button (Sun/Moon icons), persists in localStorage
 - **Actor cards**: Blue gradient (Boy), Pink gradient (Girl) with thick colored borders
-- **Frontend**: React 19, Tailwind CSS, Phosphor Icons, Framer Motion
+- **Frontend**: React 19, Tailwind CSS (darkMode: class), Phosphor Icons, Framer Motion
 - **Backend**: FastAPI, MongoDB, Python
 - **Integrations**:
   - Emergent Google OAuth for authentication
@@ -65,20 +66,26 @@ Build Dubbing China to Khmer using python website following top trending design 
 - [x] Search in segments
 - [x] Browser notification when processing done
 - [x] Parallel TTS processing (5 segments at a time, 2-3x faster)
-- [x] Auto-process button (one click: Detect → Translate → Audio)
+- [x] Auto-process button (one click: Detect -> Translate -> Audio)
 - [x] Queue status tracking per project
-- [x] Voice Pitch slider (-6 to +6 semitones) **per actor** for older/deeper or younger/higher voice
-- [x] FFmpeg pitch post-processing on TTS audio (preview + full generation)
-- [x] GPT auto-detects actor **age** (~20s, ~30s, ~40s, etc.) and **role** (Narrator, Boss, Wife) from dialogue
+- [x] Voice Pitch slider (-6 to +6 semitones) per actor
+- [x] FFmpeg pitch post-processing on TTS audio
+- [x] GPT auto-detects actor age and role from dialogue
 - [x] Actor cards show role badge and age badge
-- [x] GPT detects **emotion** per line (happy, sad, angry, calm, excited, scared, serious)
-- [x] SSML prosody: voice speed/pitch/volume adjusts per emotion (happy=faster+higher, sad=slower+softer, angry=louder)
-- [x] Natural pauses: auto-insert breathing pauses after punctuation marks
-- [x] Original voice mixing: original speaker audio mixed at 10% volume behind Khmer TTS for natural feel
+
+### Round 3 (UI/UX)
+- [x] Complete Swiss Light Theme UI redesign
+- [x] Dark Mode with toggle (Sun/Moon icon) across all pages
+- [x] Theme persistence in localStorage
+- [x] Landing page, Dashboard, Editor, SharedProject all support dark mode
 
 ## Prioritized Backlog
 
 ### P2 (Medium Priority)
+- [ ] AI voice cloning (needs paid API)
+- [ ] Auto lip sync (complex AI)
+- [ ] Drag to adjust timing
+- [ ] Export different video quality
 - [ ] Background music preservation
 - [ ] Adjust volume per segment
 - [ ] Trim video before dubbing
@@ -87,8 +94,6 @@ Build Dubbing China to Khmer using python website following top trending design 
 - [ ] Project tags/folders
 
 ### P3 (Low Priority)
-- [ ] AI voice cloning (needs paid API)
-- [ ] Auto lip sync (complex AI)
 - [ ] Team workspace / collaboration
 - [ ] Waveform timeline visualization
 - [ ] Usage analytics dashboard
@@ -100,3 +105,5 @@ Build Dubbing China to Khmer using python website following top trending design 
 - Whisper auto-detects language (no hardcoded "zh")
 - Share system: share_token stored in project doc, public endpoints at /api/shared/{token}
 - Merge/Split endpoints re-index segment IDs after operation
+- DO NOT re-add SSML/Emotion TTS features - user explicitly removed them
+- Dark mode uses Tailwind `class` strategy with isDark state in AuthContext
