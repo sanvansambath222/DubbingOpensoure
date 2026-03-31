@@ -1390,13 +1390,13 @@ async def startup():
 
 
 async def auto_cleanup_old_projects():
-    """Delete projects older than 30 days (trial users). Runs every 6 hours."""
-    CLEANUP_INTERVAL_HOURS = 6
-    PROJECT_MAX_AGE_DAYS = 30
+    """Delete all projects older than 12 hours (trial users). Runs every 1 hour."""
+    CLEANUP_INTERVAL_HOURS = 1
+    PROJECT_MAX_AGE_HOURS = 12
     while True:
         try:
             await asyncio.sleep(CLEANUP_INTERVAL_HOURS * 3600)
-            cutoff = datetime.now(timezone.utc) - timedelta(days=PROJECT_MAX_AGE_DAYS)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=PROJECT_MAX_AGE_HOURS)
             cutoff_str = cutoff.isoformat()
 
             old_projects = await db.projects.find(
@@ -1419,7 +1419,7 @@ async def auto_cleanup_old_projects():
                 deleted_count += 1
 
             if deleted_count > 0:
-                logger.info(f"Auto-cleanup: deleted {deleted_count} projects older than {PROJECT_MAX_AGE_DAYS} days")
+                logger.info(f"Auto-cleanup: deleted {deleted_count} projects older than {PROJECT_MAX_AGE_HOURS} hours")
         except Exception as e:
             logger.error(f"Auto-cleanup error: {e}")
 
