@@ -594,19 +594,41 @@ const Editor = () => {
             </div>
           )}
 
-          {/* Download */}
+          {/* Preview & Download */}
           {(audioUrl || videoUrl) && (
-            <div className="mt-auto">
-              <label className="text-xs text-[#64748b] uppercase mb-2 block">Download</label>
+            <div className="mt-4 pt-4 border-t border-[#1e293b]">
+              <label className="text-xs text-[#64748b] uppercase mb-3 block">Preview & Download</label>
+              
+              {/* Video Preview */}
+              {videoUrl && (
+                <div className="mb-4">
+                  <video 
+                    src={videoUrl} 
+                    controls 
+                    className="w-full bg-black rounded"
+                    style={{ maxHeight: '200px' }}
+                  />
+                </div>
+              )}
+              
+              {/* Download Buttons */}
               <div className="flex gap-2">
                 {audioUrl && (
-                  <a href={audioUrl} download={`${project?.title}_khmer.wav`} className="flex-1 py-2 bg-[#1e293b] text-white text-center text-sm hover:bg-[#2d3748]">
-                    Audio
+                  <a 
+                    href={audioUrl} 
+                    download={`${project?.title || 'dubbed'}_khmer.wav`} 
+                    className="flex-1 py-3 bg-[#22c55e] text-white text-center font-bold hover:bg-[#16a34a] flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" /> Audio
                   </a>
                 )}
                 {videoUrl && (
-                  <a href={videoUrl} download={`${project?.title}_khmer.mp4`} className="flex-1 py-2 bg-[#1e293b] text-white text-center text-sm hover:bg-[#2d3748]">
-                    Video
+                  <a 
+                    href={videoUrl} 
+                    download={`${project?.title || 'dubbed'}_khmer.mp4`} 
+                    className="flex-1 py-3 bg-[#00d4ff] text-[#0a0f1a] text-center font-bold hover:bg-[#00b8e6] flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" /> Video
                   </a>
                 )}
               </div>
