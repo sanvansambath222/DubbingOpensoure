@@ -387,15 +387,14 @@ async def transcribe_segments(project_id: str, authorization: str = Header(None)
                     system_message="""Analyze Chinese dialogue segments. For each segment detect:
 1. Gender: male or female (based on pronouns like 他/她, names, context, dialogue style)
 2. Speaker ID: Group segments by the same speaker (use SPEAKER_00, SPEAKER_01, etc.)
-3. Speaker label: A descriptive name based on context (e.g. "Woman", "Man", "Doctor", "Student", "Host", "Guest")
 
 Return ONLY a JSON array:
-[{"idx": 0, "gender": "female", "speaker": "SPEAKER_00", "label": "Woman"}, ...]
+[{"idx": 0, "gender": "female", "speaker": "SPEAKER_00"}, ...]
 
 Rules:
 - If 2 people are talking, use SPEAKER_00 and SPEAKER_01
 - Consecutive lines by the same person should have the same speaker ID
-- Use context to determine gender and role"""
+- Use context clues to determine gender (he/she pronouns, names, tone)"""
                 )
                 detect_chat.with_model("openai", "gpt-5.2")
                 all_text = "\n".join([f"{i}: {s['original']}" for i, s in enumerate(segments)])
@@ -414,29 +413,23 @@ Rules:
                 except Exception as e:
                     logger.warning(f"Smart detection failed: {e}")
 
-            # Build actors from unique speakers
+            # Build actors from unique speakers — simple "Man" / "Woman" labels
             speaker_info = {}
             for seg in segments:
                 spk = seg.get("speaker", "SPEAKER_00")
                 if spk not in speaker_info:
                     speaker_info[spk] = {"gender": seg.get("gender", "female")}
 
-            # Try to get labels from detections
-            speaker_labels = {}
-            if segments:
-                try:
-                    result_text_local = result_text
-                    if "[" in result_text_local:
-                        for d in detections:
-                            spk = d.get("speaker", "")
-                            if spk and d.get("label"):
-                                speaker_labels[spk] = d["label"]
-                except Exception:
-                    pass
-
+            man_count = 0
+            woman_count = 0
             actors = []
             for spk, info in speaker_info.items():
-                label = speaker_labels.get(spk, spk.replace("SPEAKER_", "Speaker "))
+                if info["gender"] == "male":
+                    man_count += 1
+                    label = "Man" if man_count == 1 else f"Man {man_count}"
+                else:
+                    woman_count += 1
+                    label = "Woman" if woman_count == 1 else f"Woman {woman_count}"
                 actors.append({
                     "id": spk,
                     "label": label,
