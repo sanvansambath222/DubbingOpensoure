@@ -555,11 +555,13 @@ const Editor = () => {
               <div className="flex gap-3 overflow-x-auto pb-1">
                 {actors.map((actor) => {
                   const isMale = actor.gender === 'male';
-                  const color = isMale ? 'blue' : 'pink';
+                  const actorSegs = segments.filter(s => s.speaker === actor.id);
+                  const totalLen = actorSegs.reduce((sum, s) => sum + ((s.end || 0) - (s.start || 0)), 0);
+                  const segCount = actorSegs.length;
                   return (
                     <div key={actor.id} data-testid={`actor-card-${actor.id}`}
                       className="min-w-[220px] bg-white/[0.02] border border-white/[0.06] rounded-xl p-3.5 hover:border-cyan-500/15 transition-all flex-shrink-0">
-                      <div className="flex items-center gap-2.5 mb-3">
+                      <div className="flex items-center gap-2.5 mb-2">
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center border ${
                           isMale ? 'bg-blue-500/10 border-blue-500/20' : 'bg-pink-500/10 border-pink-500/20'
                         }`}>
@@ -574,6 +576,16 @@ const Editor = () => {
                             <option value="male">Boy</option>
                           </select>
                         </div>
+                      </div>
+
+                      {/* Speaking info */}
+                      <div className="bg-amber-500/8 border border-amber-500/15 rounded-md px-2.5 py-1.5 mb-2 flex items-center justify-between">
+                        <span className="text-amber-400 text-[10px] font-semibold">
+                          {segCount} {segCount === 1 ? 'line' : 'lines'}
+                        </span>
+                        <span className="text-amber-300 text-[11px] font-bold">
+                          {totalLen < 60 ? `${totalLen.toFixed(1)}s` : `${Math.floor(totalLen / 60)}m ${Math.round(totalLen % 60)}s`}
+                        </span>
                       </div>
 
                       {/* Voice */}
@@ -594,12 +606,17 @@ const Editor = () => {
                               className="text-red-400/60 hover:text-red-400 text-[10px]">Remove</button>
                           </div>
                         ) : (
-                          <label data-testid={`actor-upload-voice-${actor.id}`}
-                            className="cursor-pointer flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
-                            <input type="file" accept="audio/*" className="hidden"
-                              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadActorVoice(actor.id, f); }} />
-                            <Upload className="w-3 h-3" /> Upload Voice
-                          </label>
+                          <div>
+                            <label data-testid={`actor-upload-voice-${actor.id}`}
+                              className="cursor-pointer flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
+                              <input type="file" accept="audio/*" className="hidden"
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadActorVoice(actor.id, f); }} />
+                              <Upload className="w-3 h-3" /> Upload Voice
+                            </label>
+                            <p className="text-amber-400/60 text-[9px] mt-1 text-center">
+                              Record {totalLen < 60 ? `~${totalLen.toFixed(0)}s` : `~${Math.floor(totalLen / 60)}m ${Math.round(totalLen % 60)}s`} total
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
