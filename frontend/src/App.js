@@ -8,7 +8,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload, Play, Download, User, SignOut, Plus, CheckCircle, Spinner,
   MicrophoneStage, VideoCamera, SpeakerHigh, CaretRight, Waveform,
-  GenderMale, GenderFemale, Trash, ArrowLeft, Subtitles, FilmStrip
+  GenderMale, GenderFemale, Trash, ArrowLeft, Subtitles, FilmStrip,
+  Record, Stop, Microphone, Eye
 } from "@phosphor-icons/react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -300,8 +301,17 @@ const Editor = () => {
   const [audioUrl, setAudioUrl] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
   const [burnSubs, setBurnSubs] = useState(false);
+  const [originalVideoUrl, setOriginalVideoUrl] = useState(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [recordingIdx, setRecordingIdx] = useState(null); // segment index being recorded
+  const [recordingActorId, setRecordingActorId] = useState(null); // actor being recorded
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const recordTimerRef = useRef(null);
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
+  const originalVideoRef = useRef(null);
 
   const femaleVoices = [
     { id: "sophea", name: "Sophea" }, { id: "chanthy", name: "Chanthy" },
@@ -332,6 +342,7 @@ const Editor = () => {
       if (r.data.actors) setActors(r.data.actors);
       if (r.data.dubbed_audio_path) loadFile(r.data.dubbed_audio_path, 'audio');
       if (r.data.dubbed_video_path) loadFile(r.data.dubbed_video_path, 'video');
+      if (r.data.original_file_path && r.data.file_type === 'video') loadFile(r.data.original_file_path, 'original');
     } catch { toast.error("Failed to load project"); navigate("/dashboard"); }
     finally { setLoading(false); }
   };
@@ -340,7 +351,9 @@ const Editor = () => {
     try {
       const r = await axios.get(`${API}/files/${path}`, { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob' });
       const url = URL.createObjectURL(r.data);
-      if (type === 'audio') setAudioUrl(url); else setVideoUrl(url);
+      if (type === 'audio') setAudioUrl(url);
+      else if (type === 'video') setVideoUrl(url);
+      else if (type === 'original') setOriginalVideoUrl(url);
     } catch (e) { console.error(`Load ${type} failed`, e); }
   };
 
@@ -428,6 +441,50 @@ const Editor = () => {
     axios.patch(`${API}/projects/${projectId}`, { actors: updated, segments: updatedSegs }, { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
   };
 
+  // Voice Recording
+  const startRecording = async (segIdx, actorId) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      recordedChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(recordTimerRef.current);
+        const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' });
+        const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
+        
+        if (actorId) {
+          await uploadActorVoice(actorId, file);
+          setRecordingActorId(null);
+        } else if (segIdx !== null) {
+          const fd = new FormData(); fd.append('file', file); fd.append('segment_id', String(segIdx));
+          try {
+            const r = await axios.post(`${API}/projects/${projectId}/upload-segment-audio`, fd,
+              { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
+            const updated = [...segments]; updated[segIdx].custom_audio = r.data.audio_path; setSegments(updated);
+            toast.success("Recording saved!");
+          } catch { toast.error("Save failed"); }
+          setRecordingIdx(null);
+        }
+        setRecordingTime(0);
+      };
+
+      mediaRecorder.start();
+      if (actorId) setRecordingActorId(actorId); else setRecordingIdx(segIdx);
+      setRecordingTime(0);
+      recordTimerRef.current = setInterval(() => setRecordingTime(t => t + 0.1), 100);
+    } catch { toast.error("Microphone access denied"); }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
   const updateSegment = async (idx, field, value) => {
     const updated = [...segments]; updated[idx][field] = value; setSegments(updated);
     try { await axios.patch(`${API}/projects/${projectId}`, { segments: updated }, { headers: { Authorization: `Bearer ${token}` } }); } catch {}
@@ -482,6 +539,14 @@ const Editor = () => {
               )}
             </div>
 
+            {/* Original Video Preview */}
+            {originalVideoUrl && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1.5 block">Original Video</label>
+                <video ref={originalVideoRef} src={originalVideoUrl} controls className="w-full rounded-lg bg-black" style={{ maxHeight: '140px' }} data-testid="original-video-preview" />
+              </div>
+            )}
+
             {/* Action buttons */}
             {project?.original_file_path && (
               <button onClick={transcribe} disabled={!!processingMsg} data-testid="transcribe-btn"
@@ -522,9 +587,34 @@ const Editor = () => {
           {/* Preview & Download */}
           {(audioUrl || videoUrl) && (
             <div className="border-t border-white/5 p-4 space-y-3">
-              <label className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider block">Output</label>
-              {videoUrl && (
-                <video src={videoUrl} controls className="w-full rounded-lg bg-black" style={{ maxHeight: '180px' }} data-testid="video-preview" />
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider block">Output</label>
+                {videoUrl && originalVideoUrl && (
+                  <button onClick={() => setCompareMode(!compareMode)} data-testid="compare-btn"
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full transition-all ${
+                      compareMode ? 'bg-cyan-500/20 text-cyan-400' : 'text-slate-500 hover:text-white'
+                    }`}>
+                    <Eye className="w-3 h-3 inline mr-0.5" /> Compare
+                  </button>
+                )}
+              </div>
+              {compareMode && originalVideoUrl && videoUrl ? (
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-[9px] text-slate-600 uppercase mb-1">Original</p>
+                    <video src={originalVideoUrl} controls className="w-full rounded-lg bg-black" style={{ maxHeight: '120px' }} />
+                  </div>
+                  <div>
+                    <p className="text-[9px] text-cyan-500 uppercase mb-1">Dubbed</p>
+                    <video src={videoUrl} controls className="w-full rounded-lg bg-black" style={{ maxHeight: '120px' }} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {videoUrl && (
+                    <video src={videoUrl} controls className="w-full rounded-lg bg-black" style={{ maxHeight: '180px' }} data-testid="video-preview" />
+                  )}
+                </>
               )}
               <div className="flex gap-2">
                 {audioUrl && (
@@ -637,12 +727,25 @@ const Editor = () => {
                           </div>
                         ) : (
                           <div>
-                            <label data-testid={`actor-upload-voice-${actor.id}`}
-                              className="cursor-pointer flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
-                              <input type="file" accept="audio/*" className="hidden"
-                                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadActorVoice(actor.id, f); }} />
-                              <Upload className="w-3 h-3" /> Upload Voice
-                            </label>
+                            {recordingActorId === actor.id ? (
+                              <button onClick={stopRecording} data-testid={`actor-stop-record-${actor.id}`}
+                                className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-red-500/15 border border-red-500/25 text-red-400 text-[10px] font-semibold rounded-md animate-pulse">
+                                <Stop className="w-3 h-3" weight="fill" /> Stop ({recordingTime.toFixed(1)}s)
+                              </button>
+                            ) : (
+                              <div className="flex gap-1.5">
+                                <label data-testid={`actor-upload-voice-${actor.id}`}
+                                  className="cursor-pointer flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
+                                  <input type="file" accept="audio/*" className="hidden"
+                                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadActorVoice(actor.id, f); }} />
+                                  <Upload className="w-3 h-3" /> Upload
+                                </label>
+                                <button onClick={() => startRecording(null, actor.id)} data-testid={`actor-record-voice-${actor.id}`}
+                                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-500/8 border border-red-500/15 text-red-400 text-[10px] font-semibold hover:bg-red-500/15 transition-colors rounded-md">
+                                  <Record className="w-3 h-3" weight="fill" /> Record
+                                </button>
+                              </div>
+                            )}
                             <p className="text-amber-400/60 text-[9px] mt-1 text-center">
                               Record {totalLen < 60 ? `~${totalLen.toFixed(0)}s` : `~${Math.floor(totalLen / 60)}m ${Math.round(totalLen % 60)}s`} total
                             </p>
@@ -758,31 +861,43 @@ const Editor = () => {
                           ) : (() => {
                             const len = (seg.end || 0) - (seg.start || 0);
                             const script = seg.translated || seg.original || '';
+                            const isRecording = recordingIdx === idx;
                             return (
-                              <div className="flex flex-col gap-1 max-w-[220px]">
+                              <div className="flex flex-col gap-1 max-w-[240px]">
                                 {script && (
                                   <p className="text-white/50 text-[9px] leading-snug italic truncate" title={script}>
                                     Say: "{script}"
                                   </p>
                                 )}
-                                <div className="flex items-center gap-2">
-                                  <label data-testid={`segment-upload-voice-${idx}`}
-                                    className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
-                                    <input type="file" accept="audio/*" className="hidden"
-                                      onChange={async (e) => {
-                                        const file = e.target.files?.[0]; if (!file) return;
-                                        const fd = new FormData(); fd.append('file', file); fd.append('segment_id', String(idx));
-                                        try {
-                                          const r = await axios.post(`${API}/projects/${projectId}/upload-segment-audio`, fd,
-                                            { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
-                                          const updated = [...segments]; updated[idx].custom_audio = r.data.audio_path; setSegments(updated);
-                                          toast.success("Voice uploaded for this segment!");
-                                        } catch { toast.error("Upload failed"); }
-                                      }} />
-                                    <Upload className="w-3 h-3" /> Add Voice
-                                  </label>
-                                  <span className="text-amber-400/70 text-[9px] whitespace-nowrap">~{len.toFixed(1)}s</span>
-                                </div>
+                                {isRecording ? (
+                                  <button onClick={stopRecording} data-testid={`segment-stop-record-${idx}`}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-500/15 border border-red-500/25 text-red-400 text-[10px] font-semibold rounded-md animate-pulse">
+                                    <Stop className="w-3 h-3" weight="fill" /> Stop ({recordingTime.toFixed(1)}s)
+                                  </button>
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <label data-testid={`segment-upload-voice-${idx}`}
+                                      className="cursor-pointer inline-flex items-center gap-1 px-2 py-1 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
+                                      <input type="file" accept="audio/*" className="hidden"
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0]; if (!file) return;
+                                          const fd = new FormData(); fd.append('file', file); fd.append('segment_id', String(idx));
+                                          try {
+                                            const r = await axios.post(`${API}/projects/${projectId}/upload-segment-audio`, fd,
+                                              { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
+                                            const updated = [...segments]; updated[idx].custom_audio = r.data.audio_path; setSegments(updated);
+                                            toast.success("Voice uploaded!");
+                                          } catch { toast.error("Upload failed"); }
+                                        }} />
+                                      <Upload className="w-3 h-3" />
+                                    </label>
+                                    <button onClick={() => startRecording(idx, null)} data-testid={`segment-record-voice-${idx}`}
+                                      className="inline-flex items-center gap-1 px-2 py-1 bg-red-500/8 border border-red-500/15 text-red-400 text-[10px] font-semibold hover:bg-red-500/15 transition-colors rounded-md">
+                                      <Record className="w-3 h-3" weight="fill" /> Rec
+                                    </button>
+                                    <span className="text-amber-400/70 text-[9px] whitespace-nowrap">~{len.toFixed(1)}s</span>
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
