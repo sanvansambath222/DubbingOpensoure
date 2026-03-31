@@ -650,11 +650,14 @@ async def generate_audio_segments(project_id: str, authorization: str = Header(N
     )
 
     try:
-        headers = {"x-api-key": CAMB_API_KEY, "Content-Type": "application/json"}
-        voice_gender = {
-            "sophea": 2, "chanthy": 2, "bopha": 2, "srey": 2,
-            "dara": 1, "virak": 1, "sokha": 1, "pich": 1
+        # Gemini TTS voice mapping (male/female Khmer voices)
+        voice_map = {
+            "sophea": "Puck", "chanthy": "Kore", "bopha": "Leda", "srey": "Aoede",
+            "dara": "Charon", "virak": "Orus", "sokha": "Fenrir", "pich": "Pegasus"
         }
+
+        GOOGLE_TTS_KEY = os.environ.get('GOOGLE_TTS_KEY', '')
+        TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 
         actors = project.get("actors", [])
         actor_voice_map = {a["id"]: a["custom_voice"] for a in actors if a.get("custom_voice")}
@@ -672,10 +675,7 @@ async def generate_audio_segments(project_id: str, authorization: str = Header(N
         except Exception as e:
             logger.warning(f"Could not get media duration: {e}")
 
-        # If we have timestamps and duration, use timeline-aligned audio
         has_timestamps = any(seg.get("start", 0) > 0 or seg.get("end", 0) > 0 for seg in segments)
-        
-        # Fallback: use last segment end time if no media duration
         if not total_duration_ms and has_timestamps:
             last_end = max(seg.get("end", 0) for seg in segments)
             total_duration_ms = int((last_end + 2) * 1000)
@@ -701,32 +701,55 @@ async def generate_audio_segments(project_id: str, authorization: str = Header(N
             if not seg.get("translated"):
                 continue
 
+            # Use Gemini TTS
             speaker = seg.get("speaker", "")
-            voice = actor_ai_voice_map.get(speaker, seg.get("voice", "sophea"))
-            gender = voice_gender.get(voice, 2)
+            voice_name = actor_ai_voice_map.get(speaker, seg.get("voice", "sophea"))
+            gemini_voice = voice_map.get(voice_name, "Puck")
 
-            payload = {"text": seg["translated"], "voice_id": 147319, "language": 92, "gender": gender}
-            response = req.post("https://client.camb.ai/apis/tts", json=payload, headers=headers, timeout=30)
+            payload = {
+                "contents": [{"parts": [{"text": seg["translated"]}]}],
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {
+                        "voiceConfig": {
+                            "prebuiltVoiceConfig": {"voiceName": gemini_voice}
+                        }
+                    }
+                }
+            }
+
+            response = req.post(
+                f"{TTS_URL}?key={GOOGLE_TTS_KEY}",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=60
+            )
             response.raise_for_status()
-            task_id = response.json().get("task_id")
+            result = response.json()
 
-            run_id = None
-            for _ in range(60):
-                status_resp = req.get(f"https://client.camb.ai/apis/tts/{task_id}", headers=headers, timeout=30)
-                status_data = status_resp.json()
-                if status_data.get("status") == "SUCCESS":
-                    run_id = status_data.get("run_id")
-                    break
-                elif status_data.get("status") == "FAILURE":
-                    raise Exception("TTS failed")
-                time.sleep(2)
+            audio_b64 = result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+            import base64
+            pcm_data = base64.b64decode(audio_b64)
 
-            if not run_id:
-                raise Exception("TTS timeout")
-
-            audio_resp = req.get(f"https://client.camb.ai/apis/tts-result/{run_id}", headers=headers, timeout=60)
-            audio_seg = AudioSegment.from_file(io.BytesIO(audio_resp.content), format="flac")
+            # Convert PCM to WAV using ffmpeg
+            with tempfile.NamedTemporaryFile(suffix=".pcm", delete=False) as pcm_f:
+                pcm_f.write(pcm_data)
+                pcm_path = pcm_f.name
+            wav_path = pcm_path.replace(".pcm", ".wav")
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
+                "-i", pcm_path, wav_path
+            ], capture_output=True)
+            
+            audio_seg = AudioSegment.from_file(wav_path, format="wav")
             segment_audio_pairs.append((seg, audio_seg))
+            
+            # Cleanup temp files
+            try:
+                os.unlink(pcm_path)
+                os.unlink(wav_path)
+            except Exception:
+                pass
 
         if not segment_audio_pairs:
             raise Exception("No audio generated")
