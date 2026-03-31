@@ -549,7 +549,7 @@ async def transcribe_project(project_id: str, authorization: str = Header(None))
 # Translation
 @api_router.post("/projects/{project_id}/translate")
 async def translate_project(project_id: str, authorization: str = Header(None)):
-    """Translate Chinese text to Khmer, preserving speaker markers"""
+    """Translate Chinese text to Khmer with auto speaker/gender detection"""
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     
     user = await get_current_user(authorization)
@@ -567,33 +567,67 @@ async def translate_project(project_id: str, authorization: str = Header(None)):
     )
     
     try:
-        # Check if text has gender markers
         original_text = project["original_text"]
-        has_markers = "[F]" in original_text or "[M]" in original_text
         
-        if has_markers:
-            # Translate with marker preservation
-            system_msg = """You are a professional Chinese to Khmer translator.
-Translate the given Chinese text to Khmer accurately while preserving the meaning and tone.
-IMPORTANT: Keep all [F] and [M] markers exactly as they are - do not translate or remove them.
-[F] marks female speaker, [M] marks male speaker.
-Only output the Khmer translation with preserved markers, nothing else."""
-        else:
-            system_msg = "You are a professional Chinese to Khmer translator. Translate the given Chinese text to Khmer accurately while preserving the meaning and tone. Only output the Khmer translation, nothing else."
+        # First, detect speakers and add markers using AI
+        detect_chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"detect_{project_id}",
+            system_message="""You are a speaker detection expert. Analyze the Chinese text and identify different speakers.
+Add [F] marker before female speaker parts and [M] marker before male speaker parts.
+
+Rules:
+1. Look for dialogue patterns like 女：, 男：, 她说, 他说, etc.
+2. Look for names that indicate gender (小红=female, 小明=male)
+3. Look for pronouns 她/他
+4. If a conversation, alternate speakers get different markers
+5. If only one speaker or unclear, use [F] for female-sounding or [M] for male-sounding based on context
+6. ALWAYS add at least one [F] or [M] marker at the start
+
+Output ONLY the text with [F] and [M] markers added, nothing else.
+
+Example input: 女：你好。男：欢迎。
+Example output: [F]你好。[M]欢迎。
+
+Example input: 大家好，我是医生。
+Example output: [M]大家好，我是医生。"""
+        )
+        detect_chat.with_model("openai", "gpt-5.2")
         
-        chat = LlmChat(
+        marked_text = await detect_chat.send_message(UserMessage(text=original_text))
+        
+        # Ensure markers exist
+        if "[F]" not in marked_text and "[M]" not in marked_text:
+            marked_text = "[F]" + marked_text  # Default to female if no markers
+        
+        logger.info(f"Marked text: {marked_text}")
+        
+        # Now translate with marker preservation
+        translate_chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"translate_{project_id}",
-            system_message=system_msg
+            system_message="""You are a professional Chinese to Khmer translator.
+Translate the given Chinese text to Khmer accurately.
+CRITICAL: Keep ALL [F] and [M] markers EXACTLY where they are - do not translate, remove, or move them.
+[F] = female speaker, [M] = male speaker.
+Output ONLY the Khmer translation with preserved markers."""
         )
-        chat.with_model("openai", "gpt-5.2")
+        translate_chat.with_model("openai", "gpt-5.2")
         
-        user_message = UserMessage(text=original_text)
-        translated = await chat.send_message(user_message)
+        translated = await translate_chat.send_message(UserMessage(text=marked_text))
+        
+        # Verify markers are preserved
+        if "[F]" not in translated and "[M]" not in translated:
+            # Markers were lost, add them back based on original
+            if "[F]" in marked_text:
+                translated = "[F]" + translated
+            elif "[M]" in marked_text:
+                translated = "[M]" + translated
         
         await db.projects.update_one(
             {"project_id": project_id},
             {"$set": {
+                "original_text": marked_text,  # Save marked version
                 "translated_text": translated,
                 "status": "translated",
                 "updated_at": datetime.now(timezone.utc).isoformat()
@@ -602,6 +636,7 @@ Only output the Khmer translation with preserved markers, nothing else."""
         
         return await db.projects.find_one({"project_id": project_id}, {"_id": 0})
     except Exception as e:
+        logger.error(f"Translation error: {str(e)}")
         await db.projects.update_one(
             {"project_id": project_id},
             {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
@@ -700,13 +735,13 @@ async def generate_audio(project_id: str, authorization: str = Header(None)):
                             raise Exception(f"TTS failed: {status_data}")
                         time.sleep(2)
                     
-                    # Download segment audio
+                    # Download segment audio (CAMB.AI returns FLAC format)
                     audio_resp = requests.get(
                         f"https://client.camb.ai/apis/tts-result/{run_id}",
                         headers=headers,
                         timeout=60
                     )
-                    audio_segments.append(AudioSegment.from_wav(io.BytesIO(audio_resp.content)))
+                    audio_segments.append(AudioSegment.from_file(io.BytesIO(audio_resp.content), format="flac"))
             
             # Combine all segments
             if audio_segments:
@@ -759,13 +794,17 @@ async def generate_audio(project_id: str, authorization: str = Header(None)):
             else:
                 raise Exception("TTS timeout")
             
-            # Download audio
+            # Download audio (CAMB.AI returns FLAC format)
             audio_resp = requests.get(
                 f"https://client.camb.ai/apis/tts-result/{run_id}",
                 headers=headers,
                 timeout=60
             )
-            audio_bytes = audio_resp.content
+            # Convert FLAC to WAV
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_resp.content), format="flac")
+            output = io.BytesIO()
+            audio_segment.export(output, format="wav")
+            audio_bytes = output.getvalue()
         
         # Upload to storage
         path = f"{APP_NAME}/audio/{user.user_id}/{project_id}/dubbed_{uuid.uuid4().hex}.wav"
