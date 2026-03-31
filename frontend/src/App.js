@@ -1100,9 +1100,9 @@ const Editor = () => {
                         {/* Per-actor Pitch slider */}
                         <div>
                           <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-[9px] text-slate-500 font-semibold">Pitch</span>
+                            <span className="text-[9px] text-slate-500 font-semibold">Voice Age</span>
                             <span className={`text-[9px] font-bold ${(actor.pitch || 0) < 0 ? 'text-amber-400' : (actor.pitch || 0) > 0 ? 'text-purple-400' : 'text-slate-500'}`}>
-                              {(actor.pitch || 0) === 0 ? 'Normal' : (actor.pitch || 0) < 0 ? `${actor.pitch} Deep` : `+${actor.pitch} High`}
+                              ~{Math.round(30 - (actor.pitch || 0) * 5)} years old
                             </span>
                           </div>
                           <input type="range" min={-6} max={6} value={actor.pitch || 0}
@@ -1110,7 +1110,7 @@ const Editor = () => {
                             data-testid={`actor-pitch-${actor.id}`}
                             className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:rounded-full" />
                           <div className="flex justify-between text-[8px] text-slate-700 mt-0.5">
-                            <span>Older</span><span>Young</span>
+                            <span>~60 yrs</span><span>~30 yrs</span><span>~0 yrs</span>
                           </div>
                         </div>
                         {actor.custom_voice ? (
