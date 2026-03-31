@@ -362,14 +362,16 @@ const StepProgress = ({ currentStep, steps, isDark }) => {
 };
 
 // Processing Overlay
-const ProcessingOverlay = ({ message, isDark }) => {
+const ProcessingOverlay = ({ message, isDark, progressInfo }) => {
   const d = isDark;
+  const fmtTime = (s) => { if (!s || s <= 0) return ""; const m = Math.floor(s / 60); const sec = Math.round(s % 60); return m > 0 ? `${m}m ${sec}s` : `${sec}s`; };
+  const stepLabels = { transcribing: "Detecting Speakers", translating: "Translating", generating_audio: "Generating Audio", generating_video: "Merging Video", starting: "Starting..." };
   return (
   <AnimatePresence>
     {message && (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className={`fixed inset-0 z-50 backdrop-blur-sm flex items-center justify-center ${d?'bg-zinc-950/80':'bg-white/80'}`}>
-        <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`border rounded-sm p-8 text-center max-w-sm shadow-xl ${d?'bg-zinc-900 border-zinc-700':'bg-white border-black/10'}`}>
+        <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`border rounded-sm p-8 text-center max-w-sm w-full mx-4 shadow-xl ${d?'bg-zinc-900 border-zinc-700':'bg-white border-black/10'}`}>
           <div className="relative w-16 h-16 mx-auto mb-5">
             <div className={`absolute inset-0 rounded-sm border-2 ${d?'border-zinc-700':'border-zinc-200'}`} />
             <div className="absolute inset-0 rounded-sm border-2 border-transparent border-t-cyan-400 animate-spin" />
@@ -377,8 +379,32 @@ const ProcessingOverlay = ({ message, isDark }) => {
               <Waveform className={`w-6 h-6 ${d?'text-zinc-300':'text-zinc-700'}`} />
             </div>
           </div>
-          <p className={`font-medium text-sm mb-1 ${d?'text-white':'text-zinc-950'}`}>Processing</p>
-          <p className="text-zinc-500 text-xs">{message}</p>
+          <p className={`font-medium text-sm mb-1 ${d?'text-white':'text-zinc-950'}`}>
+            {progressInfo?.step ? (stepLabels[progressInfo.step] || progressInfo.step) : "Processing"}
+          </p>
+          <p className="text-zinc-500 text-xs mb-4">{message}</p>
+          
+          {/* Progress bar */}
+          {progressInfo?.total > 0 && progressInfo?.progress > 0 && (
+            <div data-testid="progress-bar-container">
+              <div className={`w-full h-2 rounded-full overflow-hidden mb-2 ${d?'bg-zinc-700':'bg-zinc-200'}`}>
+                <motion.div
+                  className="h-full bg-cyan-500 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, Math.round((progressInfo.progress / progressInfo.total) * 100))}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                <span data-testid="progress-count">{progressInfo.progress}/{progressInfo.total} segments</span>
+                <span>{Math.round((progressInfo.progress / progressInfo.total) * 100)}%</span>
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-400 mt-1">
+                {progressInfo.elapsed > 0 && <span>Elapsed: {fmtTime(progressInfo.elapsed)}</span>}
+                {progressInfo.eta > 0 && <span>~{fmtTime(progressInfo.eta)} left</span>}
+              </div>
+            </div>
+          )}
         </motion.div>
       </motion.div>
     )}
@@ -397,6 +423,8 @@ const Editor = () => {
   const [actors, setActors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processingMsg, setProcessingMsg] = useState(null);
+  const [progressInfo, setProgressInfo] = useState(null); // {step, progress, total, elapsed, eta}
+  const progressPollRef = useRef(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
   const [burnSubs, setBurnSubs] = useState(false);
@@ -514,17 +542,19 @@ const Editor = () => {
   const translate = async () => {
     const langName = OUTPUT_LANGUAGES[targetLanguage]?.name || "Khmer";
     setProcessingMsg(`Translating to ${langName}...`);
+    startProgressPoll();
     try {
       const r = await axios.post(`${API}/projects/${projectId}/translate-segments?target_language=${targetLanguage}`, {}, { headers: { Authorization: `Bearer ${token}` } });
       setProject(r.data); setSegments(r.data.segments || []);
       toast.success(`Translation to ${langName} complete!`);
       sendNotification("KhmerDub", `Translation to ${langName} complete!`);
     } catch { toast.error("Translation failed"); }
-    finally { setProcessingMsg(null); }
+    finally { setProcessingMsg(null); stopProgressPoll(); }
   };
 
   const generateAudio = async () => {
-    setProcessingMsg("Generating Khmer voices (this may take a minute)...");
+    setProcessingMsg("Generating voices...");
+    startProgressPoll();
     try {
       const r = await axios.post(`${API}/projects/${projectId}/generate-audio-segments?speed=${ttsSpeed}`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 300000 });
       setProject(r.data);
@@ -532,7 +562,7 @@ const Editor = () => {
       toast.success("Audio generated!");
       sendNotification("KhmerDub", "Khmer audio generation complete!");
     } catch { toast.error("Audio generation failed"); }
-    finally { setProcessingMsg(null); }
+    finally { setProcessingMsg(null); stopProgressPoll(); }
   };
 
   const generateVideo = async () => {
@@ -715,6 +745,22 @@ const Editor = () => {
     }
   };
 
+  // Progress polling
+  const startProgressPoll = () => {
+    stopProgressPoll();
+    progressPollRef.current = setInterval(async () => {
+      try {
+        const r = await axios.get(`${API}/projects/${projectId}/queue-status`, { headers: { Authorization: `Bearer ${token}` } });
+        setProgressInfo(r.data);
+      } catch {}
+    }, 1500);
+  };
+  const stopProgressPoll = () => {
+    if (progressPollRef.current) { clearInterval(progressPollRef.current); progressPollRef.current = null; }
+    setProgressInfo(null);
+  };
+  useEffect(() => { return () => stopProgressPoll(); }, []);
+
   // Request notification permission on mount
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -733,6 +779,7 @@ const Editor = () => {
   // Auto-process: transcribe + translate + audio in one click
   const autoProcess = async () => {
     setProcessingMsg("Auto-processing: Detect → Translate → Audio...");
+    startProgressPoll();
     try {
       const r = await axios.post(`${API}/projects/${projectId}/auto-process?speed=${ttsSpeed}&target_language=${targetLanguage}`, {}, {
         headers: { Authorization: `Bearer ${token}` }, timeout: 600000
@@ -744,7 +791,7 @@ const Editor = () => {
       toast.success("Auto-process complete!");
       sendNotification("KhmerDub", "Auto-process complete!");
     } catch (e) { toast.error(e.response?.data?.detail || "Auto-process failed"); }
-    finally { setProcessingMsg(null); }
+    finally { setProcessingMsg(null); stopProgressPoll(); }
   };
 
   // Share link
@@ -832,7 +879,7 @@ const Editor = () => {
 
   return (
     <div className={`min-h-screen flex flex-col ${d?'bg-zinc-950':'bg-zinc-50'}`} data-testid="editor-page" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
-      <ProcessingOverlay message={processingMsg} isDark={d} />
+      <ProcessingOverlay message={processingMsg} isDark={d} progressInfo={progressInfo} />
 
       {/* Header */}
       <header className={`px-4 py-2.5 flex items-center justify-between shadow-sm border-b ${d?'bg-zinc-900 border-zinc-800':'bg-white border-black/10'}`}>

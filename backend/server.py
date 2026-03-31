@@ -32,7 +32,7 @@ LOCAL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Background task queue
 processing_queue = asyncio.Queue()
-queue_status = {}  # project_id -> {"position": int, "status": "queued"|"processing"|"done"|"error"}
+queue_status = {}  # project_id -> {"position": int, "status": str, "step": str, "progress": int, "total": int, "started_at": float}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -263,21 +263,6 @@ async def get_current_user(authorization: str = Header(None)) -> User:
 @api_router.get("/")
 async def root():
     return {"message": "Khmer Dubbing API"}
-
-@api_router.get("/languages")
-async def get_languages():
-    """Get all supported output languages with their voices."""
-    result = []
-    for code, name in LANGUAGE_NAMES.items():
-        voices = EDGE_TTS_VOICES.get(code)
-        if voices:
-            result.append({
-                "code": code,
-                "name": name,
-                "male_voices": voices.get("male", []),
-                "female_voices": voices.get("female", []),
-            })
-    return result
 
 # Auth endpoints
 @api_router.post("/auth/session")
@@ -850,26 +835,37 @@ async def translate_segments(project_id: str, target_language: str = Query("km")
         source_lang_name = LANGUAGE_NAMES.get(detected_lang, detected_lang)
         target_lang_name = LANGUAGE_NAMES.get(target_language, target_language)
         
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"translate_seg_{project_id}_{uuid.uuid4().hex[:6]}",
-            system_message=f"""You are a {source_lang_name} to {target_lang_name} translator. Translate each numbered {source_lang_name} line to {target_lang_name}.
+        import time as _time
+        queue_status[project_id] = {"status": "processing", "step": "translating", "progress": 0, "total": len(segments), "started_at": _time.time()}
+        
+        # Chunk translation for long videos (50 segments per batch)
+        TRANSLATE_CHUNK = 50
+        for chunk_start in range(0, len(segments), TRANSLATE_CHUNK):
+            chunk_end = min(chunk_start + TRANSLATE_CHUNK, len(segments))
+            chunk = segments[chunk_start:chunk_end]
+            
+            chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"translate_seg_{project_id}_{uuid.uuid4().hex[:6]}",
+                system_message=f"""You are a {source_lang_name} to {target_lang_name} translator. Translate each numbered {source_lang_name} line to {target_lang_name}.
 Return translations in exact same format: number followed by {target_lang_name} translation.
 Only output translations, nothing else."""
-        )
-        chat.with_model("openai", "gpt-5.2")
-        input_text = "\n".join([f"{i}: {s['original']}" for i, s in enumerate(segments)])
-        translations = await chat.send_message(UserMessage(text=input_text))
-        lines = translations.strip().split("\n")
-        for line in lines:
-            if ":" in line:
-                try:
-                    idx_str, trans = line.split(":", 1)
-                    idx = int(idx_str.strip())
-                    if idx < len(segments):
-                        segments[idx]["translated"] = trans.strip()
-                except (ValueError, IndexError):
-                    pass
+            )
+            chat.with_model("openai", "gpt-5.2")
+            input_text = "\n".join([f"{i}: {s['original']}" for i, s in enumerate(chunk)])
+            translations = await chat.send_message(UserMessage(text=input_text))
+            lines = translations.strip().split("\n")
+            for line in lines:
+                if ":" in line:
+                    try:
+                        idx_str, trans = line.split(":", 1)
+                        idx = int(idx_str.strip())
+                        if idx < len(chunk):
+                            segments[chunk_start + idx]["translated"] = trans.strip()
+                    except (ValueError, IndexError):
+                        pass
+            queue_status[project_id]["progress"] = chunk_end
+            logger.info(f"Translation chunk: {chunk_end}/{len(segments)} done")
         await db.projects.update_one(
             {"project_id": project_id},
             {"$set": {
@@ -1036,11 +1032,14 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
                 return None
 
         tts_pairs = []
+        import time as _time
+        queue_status[project_id] = {"status": "processing", "step": "generating_audio", "progress": 0, "total": len(tts_segments), "started_at": _time.time()}
         for i in range(0, len(tts_segments), BATCH_SIZE):
             batch = tts_segments[i:i + BATCH_SIZE]
             results = await asyncio.gather(*[generate_single_tts(seg) for seg in batch])
             tts_pairs.extend([r for r in results if r is not None])
-            logger.info(f"TTS batch {i // BATCH_SIZE + 1}: {len([r for r in results if r])} generated")
+            queue_status[project_id]["progress"] = min(i + BATCH_SIZE, len(tts_segments))
+            logger.info(f"TTS batch {i // BATCH_SIZE + 1}: {len([r for r in results if r])} generated ({queue_status[project_id]['progress']}/{len(tts_segments)})")
 
         # Combine custom + TTS, sort by segment order
         all_pairs = custom_pairs + tts_pairs
@@ -1316,12 +1315,24 @@ async def get_queue_status(project_id: str, authorization: str = Header(None)):
     project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    qs = queue_status.get(project_id, {"position": 0, "status": project.get("status", "created")})
+    qs = queue_status.get(project_id, {})
+    import time
+    elapsed = time.time() - qs.get("started_at", time.time()) if qs.get("started_at") else 0
+    progress = qs.get("progress", 0)
+    total = qs.get("total", 0)
+    eta = 0
+    if progress > 0 and total > 0:
+        per_item = elapsed / progress
+        eta = per_item * (total - progress)
     return {
         "project_id": project_id,
         "status": project.get("status", "created"),
-        "queue_position": qs.get("position", 0),
         "queue_status": qs.get("status", "idle"),
+        "step": qs.get("step", ""),
+        "progress": progress,
+        "total": total,
+        "elapsed": round(elapsed, 1),
+        "eta": round(eta, 1),
     }
 
 # Auto-process: transcribe + translate + generate audio in one call
@@ -1337,11 +1348,12 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
     if not project.get("original_file_path"):
         raise HTTPException(status_code=400, detail="No file uploaded")
     
-    queue_status[project_id] = {"position": 0, "status": "processing"}
+    queue_status[project_id] = {"position": 0, "status": "processing", "step": "starting", "progress": 0, "total": 3, "started_at": __import__('time').time()}
     
     try:
         # Step 1: Transcribe (if not done)
         if project.get("status") in ["created", "uploaded"]:
+            queue_status[project_id].update({"step": "transcribing", "progress": 0, "total": 3})
             await db.projects.update_one(
                 {"project_id": project_id},
                 {"$set": {"status": "transcribing", "updated_at": datetime.now(timezone.utc).isoformat()}}
@@ -1352,11 +1364,13 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
         
         # Step 2: Translate (if not done)
         if project.get("status") == "transcribed":
+            queue_status[project_id].update({"step": "translating", "progress": 1, "total": 3})
             result = await translate_segments(project_id, target_language=target_language, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         
         # Step 3: Generate audio (if not done)
         if project.get("status") == "translated":
+            queue_status[project_id].update({"step": "generating_audio", "progress": 2, "total": 3})
             result = await generate_audio_segments(project_id, speed=speed, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         

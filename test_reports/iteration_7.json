@@ -1,0 +1,80 @@
+{
+  "summary": "Completed testing of chunked translation and real-time progress bar features. All 11 backend tests passed (100%). All 6 frontend tests passed (100%). The /api/languages endpoint has been REMOVED as requested (returns 404). The queue-status endpoint returns all required progress fields (step, progress, total, elapsed, eta). The translate-segments endpoint accepts target_language param. The ProcessingOverlay component has progress bar UI with segment count, percentage, elapsed time, and ETA.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "passed_tests": [
+    "GET /api/projects/{id}/queue-status returns 200 for valid project",
+    "queue-status returns all required fields: step, progress, total, elapsed, eta",
+    "queue-status returns progress=0, total=0 when no processing is happening",
+    "queue-status elapsed and eta are numeric values",
+    "queue-status requires authentication (returns 401 without token)",
+    "queue-status returns 404 for non-existent project",
+    "/api/languages endpoint returns 404 (endpoint removed as requested)",
+    "/api/languages returns 404 even with auth token",
+    "POST translate-segments accepts target_language query param",
+    "translate-segments defaults to 'km' when no target_language provided",
+    "queue-status response has correct structure and data types",
+    "Frontend loads without errors",
+    "Editor page loads with segments",
+    "Output language selector dropdown visible in editor sidebar",
+    "Dropdown contains exactly 20 language options",
+    "Translate button shows 'Translate to Khmer' text",
+    "ProcessingOverlay component has progress-bar-container data-testid",
+    "ProcessingOverlay shows progress count with segments format"
+  ],
+
+  "test_report_links": [
+    "/app/backend/tests/test_progress_features.py",
+    "/app/test_reports/pytest/pytest_progress_features.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [
+    "Minor ESLint warnings in App.js (useEffect missing dependencies) - not blocking"
+  ],
+
+  "updated_files": [
+    "/app/backend/tests/test_progress_features.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100% (6/6 tests passed)"
+  },
+
+  "seed_data_creation": "Created test project with segments to verify language selector visibility",
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Progress bar and chunked translation features fully implemented and tested. Backend queue-status endpoint returns step/progress/total/elapsed/eta fields. /api/languages endpoint REMOVED (languages stored in frontend OUTPUT_LANGUAGES dict). translate-segments accepts ?target_language=xx param. ProcessingOverlay component shows progress bar when progressInfo has data (progress-bar-container, progress-count data-testids). Test session: test_session_001 for user test-user-001.",
+
+  "features_verified": {
+    "queue_status_endpoint": "Returns step, progress, total, elapsed, eta fields",
+    "queue_status_idle": "Returns progress=0, total=0 when no processing",
+    "languages_endpoint_removed": "Returns 404 (endpoint removed per user request)",
+    "translate_segments_param": "Accepts target_language query param, defaults to 'km'",
+    "output_language_selector": "Dropdown with 20 options visible in editor",
+    "processing_overlay_progress_bar": "Shows segment count, percentage, elapsed time, ETA when progressInfo has data"
+  },
+
+  "progress_bar_ui_elements": {
+    "container": "data-testid='progress-bar-container'",
+    "segment_count": "data-testid='progress-count' shows '{progress}/{total} segments'",
+    "percentage": "Shows percentage (e.g., '50%')",
+    "elapsed_time": "Shows 'Elapsed: Xm Xs'",
+    "eta": "Shows '~Xm Xs left'"
+  }
+}
