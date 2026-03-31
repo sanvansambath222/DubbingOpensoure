@@ -618,6 +618,26 @@ const Editor = () => {
                             </p>
                           </div>
                         )}
+
+                        {/* Download Script TXT */}
+                        {actorSegs.length > 0 && (
+                          <button data-testid={`actor-download-script-${actor.id}`}
+                            onClick={() => {
+                              const lines = actorSegs.map((s, i) => {
+                                const len = ((s.end || 0) - (s.start || 0)).toFixed(1);
+                                const text = s.translated || s.original || '(no text)';
+                                return `Line ${i + 1} [${len}s]:\n${text}\n`;
+                              });
+                              const header = `=== ${actor.label || actor.id} Script ===\nTotal: ${segCount} lines, ${totalLen < 60 ? totalLen.toFixed(1) + 's' : Math.floor(totalLen / 60) + 'm ' + Math.round(totalLen % 60) + 's'}\n\n`;
+                              const blob = new Blob([header + lines.join('\n')], { type: 'text/plain' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a'); a.href = url; a.download = `${(actor.label || actor.id).replace(/\s/g, '_')}_script.txt`; a.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="w-full flex items-center justify-center gap-1 px-2 py-1 text-[9px] text-slate-400 hover:text-white border border-white/[0.04] hover:border-white/10 rounded-md transition-colors mt-1">
+                            <Download className="w-2.5 h-2.5" /> Download Script (.txt)
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -707,26 +727,32 @@ const Editor = () => {
                             </div>
                           ) : (() => {
                             const len = (seg.end || 0) - (seg.start || 0);
+                            const script = seg.translated || seg.original || '';
                             return (
-                              <div className="flex flex-col gap-1">
-                                <label data-testid={`segment-upload-voice-${idx}`}
-                                  className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
-                                  <input type="file" accept="audio/*" className="hidden"
-                                    onChange={async (e) => {
-                                      const file = e.target.files?.[0]; if (!file) return;
-                                      const fd = new FormData(); fd.append('file', file); fd.append('segment_id', String(idx));
-                                      try {
-                                        const r = await axios.post(`${API}/projects/${projectId}/upload-segment-audio`, fd,
-                                          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
-                                        const updated = [...segments]; updated[idx].custom_audio = r.data.audio_path; setSegments(updated);
-                                        toast.success("Voice uploaded for this segment!");
-                                      } catch { toast.error("Upload failed"); }
-                                    }} />
-                                  <Upload className="w-3 h-3" /> Add Voice
-                                </label>
-                                <span className="text-amber-400/70 text-[9px]">
-                                  {len < 3 ? `Record ~${len.toFixed(1)}s (short)` : len < 8 ? `Record ~${len.toFixed(1)}s` : `Record ~${len.toFixed(0)}s (long)`}
-                                </span>
+                              <div className="flex flex-col gap-1 max-w-[220px]">
+                                {script && (
+                                  <p className="text-white/50 text-[9px] leading-snug italic truncate" title={script}>
+                                    Say: "{script}"
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-2">
+                                  <label data-testid={`segment-upload-voice-${idx}`}
+                                    className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-cyan-500/8 border border-cyan-500/15 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/15 transition-colors rounded-md">
+                                    <input type="file" accept="audio/*" className="hidden"
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0]; if (!file) return;
+                                        const fd = new FormData(); fd.append('file', file); fd.append('segment_id', String(idx));
+                                        try {
+                                          const r = await axios.post(`${API}/projects/${projectId}/upload-segment-audio`, fd,
+                                            { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
+                                          const updated = [...segments]; updated[idx].custom_audio = r.data.audio_path; setSegments(updated);
+                                          toast.success("Voice uploaded for this segment!");
+                                        } catch { toast.error("Upload failed"); }
+                                      }} />
+                                    <Upload className="w-3 h-3" /> Add Voice
+                                  </label>
+                                  <span className="text-amber-400/70 text-[9px] whitespace-nowrap">~{len.toFixed(1)}s</span>
+                                </div>
                               </div>
                             );
                           })()}
