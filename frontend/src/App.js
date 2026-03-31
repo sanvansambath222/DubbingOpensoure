@@ -375,6 +375,7 @@ const Editor = () => {
   const [videoUrl, setVideoUrl] = useState(null);
   const [burnSubs, setBurnSubs] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(2);
+  const [ttsPitch, setTtsPitch] = useState(0);
   const [previewingIdx, setPreviewingIdx] = useState(null);
   const [originalVideoUrl, setOriginalVideoUrl] = useState(null);
   const [compareMode, setCompareMode] = useState(false);
@@ -475,7 +476,7 @@ const Editor = () => {
   const generateAudio = async () => {
     setProcessingMsg("Generating Khmer voices (this may take a minute)...");
     try {
-      const r = await axios.post(`${API}/projects/${projectId}/generate-audio-segments?speed=${ttsSpeed}`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 300000 });
+      const r = await axios.post(`${API}/projects/${projectId}/generate-audio-segments?speed=${ttsSpeed}&pitch=${ttsPitch}`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 300000 });
       setProject(r.data);
       if (r.data.dubbed_audio_path) loadFile(r.data.dubbed_audio_path, 'audio');
       toast.success("Audio generated!");
@@ -741,7 +742,7 @@ const Editor = () => {
     setPreviewingIdx(idx);
     try {
       const r = await axios.post(`${API}/projects/${projectId}/preview-tts`, 
-        { text, gender: seg.gender || 'female', speed: ttsSpeed },
+        { text, gender: seg.gender || 'female', speed: ttsSpeed, pitch: ttsPitch },
         { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob', timeout: 30000 }
       );
       const url = URL.createObjectURL(r.data);
@@ -894,13 +895,30 @@ const Editor = () => {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">Speed</label>
-                  <span className="text-cyan-400 text-xs font-bold">+{ttsSpeed}%</span>
+                  <span className="text-cyan-400 text-xs font-bold">{ttsSpeed >= 0 ? '+' : ''}{ttsSpeed}%</span>
                 </div>
                 <input type="range" min={-10} max={15} value={ttsSpeed} onChange={(e) => setTtsSpeed(Number(e.target.value))}
                   data-testid="tts-speed-slider"
                   className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:rounded-full" />
                 <div className="flex justify-between text-[9px] text-slate-600 mt-0.5">
                   <span>Slow</span><span>Normal</span><span>Fast</span>
+                </div>
+              </div>
+            )}
+
+            {segments.some(s => s.translated || s.custom_audio) && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">Voice Pitch</label>
+                  <span className={`text-xs font-bold ${ttsPitch < 0 ? 'text-amber-400' : ttsPitch > 0 ? 'text-purple-400' : 'text-slate-400'}`}>
+                    {ttsPitch === 0 ? 'Normal' : ttsPitch < 0 ? `${ttsPitch} (Deeper)` : `+${ttsPitch} (Higher)`}
+                  </span>
+                </div>
+                <input type="range" min={-6} max={6} value={ttsPitch} onChange={(e) => setTtsPitch(Number(e.target.value))}
+                  data-testid="tts-pitch-slider"
+                  className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:rounded-full" />
+                <div className="flex justify-between text-[9px] text-slate-600 mt-0.5">
+                  <span>Deeper/Older</span><span>Normal</span><span>Higher/Young</span>
                 </div>
               </div>
             )}
