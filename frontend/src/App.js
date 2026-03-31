@@ -541,13 +541,13 @@ const Editor = () => {
           {/* Transcribe */}
           {project?.original_file_path && (
             <div>
-              <label className="text-xs text-[#64748b] uppercase mb-2 block">2. Transcribe + Detect Speakers</label>
+              <label className="text-xs text-[#64748b] uppercase mb-2 block">2. Get Text Segments</label>
               <button
                 onClick={transcribeAndDetect}
                 disabled={processing}
                 className="w-full py-3 bg-[#1e293b] text-white hover:bg-[#2d3748] transition-colors disabled:opacity-50"
               >
-                {processing ? "Processing..." : "Auto Transcribe"}
+                {processing ? "Processing..." : "Extract Text & Timestamps"}
               </button>
             </div>
           )}
@@ -567,7 +567,7 @@ const Editor = () => {
           )}
 
           {/* Generate Audio */}
-          {segments.some(s => s.translated) && (
+          {segments.some(s => s.translated || s.custom_audio) && (
             <div>
               <label className="text-xs text-[#64748b] uppercase mb-2 block">4. Generate Audio</label>
               <button
@@ -575,8 +575,9 @@ const Editor = () => {
                 disabled={processing}
                 className="w-full py-3 bg-[#22c55e] text-white font-bold hover:bg-[#16a34a] transition-colors disabled:opacity-50"
               >
-                {processing ? "Generating..." : "Generate Multi-Voice Audio"}
+                {processing ? "Generating..." : "Combine All Audio"}
               </button>
+              <p className="text-xs text-[#64748b] mt-1">Uses YOUR voice where uploaded, AI voice for others</p>
             </div>
           )}
 
@@ -648,8 +649,8 @@ const Editor = () => {
                 <th className="px-3 py-3 text-left">Translated</th>
                 <th className="px-3 py-3 text-left w-28">Speaker</th>
                 <th className="px-3 py-3 text-left w-20">Gender</th>
-                <th className="px-3 py-3 text-left w-44">Voice</th>
-                <th className="px-3 py-3 text-left w-32">Custom Audio</th>
+                <th className="px-3 py-3 text-left w-36">AI Voice</th>
+                <th className="px-3 py-3 text-left w-36">Your Voice</th>
               </tr>
             </thead>
             <tbody>
@@ -709,52 +710,48 @@ const Editor = () => {
                       </select>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-1">
-                        {seg.custom_audio ? (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[#22c55e] text-xs">✓ Custom</span>
-                            <button
-                              onClick={() => updateSegment(idx, "custom_audio", null)}
-                              className="text-[#ef4444] text-xs hover:underline"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <label className="cursor-pointer">
-                            <input
-                              type="file"
-                              accept="audio/*"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (!file) return;
-                                
-                                const formData = new FormData();
-                                formData.append('file', file);
-                                formData.append('segment_id', String(idx));
-                                
-                                try {
-                                  const response = await axios.post(
-                                    `${API}/projects/${projectId}/upload-segment-audio`,
-                                    formData,
-                                    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
-                                  );
-                                  const updatedSegs = [...segments];
-                                  updatedSegs[idx].custom_audio = response.data.audio_path;
-                                  setSegments(updatedSegs);
-                                  toast.success("Custom voice uploaded!");
-                                } catch (err) {
-                                  toast.error("Upload failed");
-                                }
-                              }}
-                            />
-                            <span className="text-[#00d4ff] text-xs hover:underline flex items-center gap-1">
-                              <Upload className="w-3 h-3" /> Upload
-                            </span>
-                          </label>
-                        )}
-                      </div>
+                      {seg.custom_audio ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#22c55e] text-xs font-bold">✓ Uploaded</span>
+                          <button
+                            onClick={() => updateSegment(idx, "custom_audio", null)}
+                            className="text-[#ef4444] text-xs hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="cursor-pointer inline-flex items-center gap-1 px-3 py-1.5 bg-[#00d4ff] text-[#0a0f1a] text-xs font-bold hover:bg-[#00b8e6] transition-colors">
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              
+                              const formData = new FormData();
+                              formData.append('file', file);
+                              formData.append('segment_id', String(idx));
+                              
+                              try {
+                                const response = await axios.post(
+                                  `${API}/projects/${projectId}/upload-segment-audio`,
+                                  formData,
+                                  { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
+                                );
+                                const updatedSegs = [...segments];
+                                updatedSegs[idx].custom_audio = response.data.audio_path;
+                                setSegments(updatedSegs);
+                                toast.success("Your voice uploaded!");
+                              } catch (err) {
+                                toast.error("Upload failed");
+                              }
+                            }}
+                          />
+                          <Upload className="w-3 h-3" /> Record/Upload
+                        </label>
+                      )}
                     </td>
                   </tr>
                 ))
