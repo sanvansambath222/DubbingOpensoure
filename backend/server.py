@@ -27,23 +27,44 @@ db = client[os.environ['DB_NAME']]
 # Emergent LLM Key
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 
-# Object Storage
+# Object Storage with local fallback
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 APP_NAME = "khmer-dubbing"
 storage_key = None
+USE_LOCAL_STORAGE = True  # Fallback to local storage
+
+# Local storage directory
+LOCAL_STORAGE_DIR = Path("/app/uploads")
+LOCAL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 def init_storage():
     """Initialize storage - call once at startup"""
-    global storage_key
+    global storage_key, USE_LOCAL_STORAGE
+    if USE_LOCAL_STORAGE:
+        return "local"
     if storage_key:
         return storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_LLM_KEY}, timeout=30)
-    resp.raise_for_status()
-    storage_key = resp.json()["storage_key"]
-    return storage_key
+    try:
+        resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_LLM_KEY}, timeout=30)
+        resp.raise_for_status()
+        storage_key = resp.json()["storage_key"]
+        USE_LOCAL_STORAGE = False
+        return storage_key
+    except Exception as e:
+        logger.warning(f"Object storage unavailable, using local storage: {e}")
+        USE_LOCAL_STORAGE = True
+        return "local"
 
 def put_object(path: str, data: bytes, content_type: str) -> dict:
-    """Upload file to storage"""
+    """Upload file to storage (local or remote)"""
+    if USE_LOCAL_STORAGE:
+        # Use local storage
+        file_path = LOCAL_STORAGE_DIR / path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "wb") as f:
+            f.write(data)
+        return {"path": path, "size": len(data)}
+    
     key = init_storage()
     resp = requests.put(
         f"{STORAGE_URL}/objects/{path}",
@@ -54,7 +75,22 @@ def put_object(path: str, data: bytes, content_type: str) -> dict:
     return resp.json()
 
 def get_object(path: str) -> tuple:
-    """Download file from storage"""
+    """Download file from storage (local or remote)"""
+    if USE_LOCAL_STORAGE:
+        file_path = LOCAL_STORAGE_DIR / path
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        with open(file_path, "rb") as f:
+            data = f.read()
+        # Guess content type from extension
+        ext = path.split(".")[-1].lower() if "." in path else ""
+        content_types = {
+            "mp4": "video/mp4", "mov": "video/quicktime", "avi": "video/x-msvideo",
+            "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4",
+            "webm": "video/webm", "mkv": "video/x-matroska"
+        }
+        return data, content_types.get(ext, "application/octet-stream")
+    
     key = init_storage()
     resp = requests.get(
         f"{STORAGE_URL}/objects/{path}",
