@@ -316,6 +316,47 @@ def mix_audio_timeline(segment_audio_pairs: list, segments: list, total_duration
     return combined
 
 
+def extract_background_audio(video_path: str) -> bytes:
+    """Extract audio track from video file using ffmpeg. Returns WAV bytes."""
+    output_path = video_path + ".bg_audio.wav"
+    cmd = [
+        "ffmpeg", "-y", "-i", video_path,
+        "-vn", "-acodec", "pcm_s16le", "-ar", "24000", "-ac", "1",
+        output_path
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.warning(f"Failed to extract background audio: {result.stderr[:200]}")
+        return None
+    try:
+        with open(output_path, "rb") as f:
+            data = f.read()
+        os.unlink(output_path)
+        return data
+    except Exception:
+        return None
+
+
+def mix_with_background(dubbed_audio: 'AudioSegment', bg_audio_bytes: bytes, bg_volume: int = -12) -> 'AudioSegment':
+    """Mix dubbed TTS audio with background audio (original music/sfx).
+    bg_volume: how much to reduce background volume in dB (negative = quieter)."""
+    from pydub import AudioSegment as AS
+    try:
+        bg = AS.from_file(io.BytesIO(bg_audio_bytes), format="wav")
+        # Lower background volume to not overpower TTS voices
+        bg = bg + bg_volume
+        # Match length
+        if len(bg) > len(dubbed_audio):
+            bg = bg[:len(dubbed_audio)]
+        elif len(bg) < len(dubbed_audio):
+            bg = bg + AS.silent(duration=len(dubbed_audio) - len(bg))
+        # Mix
+        return dubbed_audio.overlay(bg)
+    except Exception as e:
+        logger.warning(f"Failed to mix background audio: {e}")
+        return dubbed_audio
+
+
 def fit_audio_to_duration(audio, target_duration_ms: int):
     """Speed up audio to fit within target duration using FFmpeg atempo (fast)."""
     if target_duration_ms <= 0 or len(audio) <= target_duration_ms:
@@ -1285,6 +1326,24 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
             raise Exception("No audio generated")
 
         combined = mix_audio_timeline(segment_audio_pairs, segments, total_duration_ms, has_timestamps)
+
+        # Mix with background audio (original music/sfx) if video project
+        if project.get("file_type") == "video" and project.get("original_file_path"):
+            try:
+                logger.info("Extracting background audio from original video...")
+                video_data, _ = get_object(project["original_file_path"])
+                ext = project.get("original_filename", "video.mp4").split(".")[-1]
+                tmp_video = os.path.join(tempfile.gettempdir(), f"bg_{uuid.uuid4().hex}.{ext}")
+                with open(tmp_video, "wb") as f:
+                    f.write(video_data)
+                bg_bytes = extract_background_audio(tmp_video)
+                os.unlink(tmp_video)
+                if bg_bytes:
+                    logger.info("Mixing dubbed audio with background music...")
+                    combined = mix_with_background(combined, bg_bytes, bg_volume=-14)
+                    logger.info("Background music mixed successfully")
+            except Exception as e:
+                logger.warning(f"Background audio extraction/mixing failed, continuing without: {e}")
 
         # Export as MP3 for long videos (WAV would be too large)
         output = io.BytesIO()
