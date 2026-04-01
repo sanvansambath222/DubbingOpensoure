@@ -399,7 +399,7 @@ const Editor = () => {
     startProgressPoll();
     try {
       const r = await axios.post(`${API}/projects/${projectId}/auto-process?speed=${ttsSpeed}&target_language=${targetLanguage}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }, timeout: AUTO_PROCESS_TIMEOUT_MS
+        headers: { Authorization: `Bearer ${token}` }, timeout: 900000
       });
       setProject(r.data);
       if (r.data.segments) setSegments(r.data.segments);

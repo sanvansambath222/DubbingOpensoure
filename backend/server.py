@@ -1581,7 +1581,9 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
         # Step 3: Generate audio (if not done)
         if project.get("status") == "translated":
             queue_status[project_id].update({"step": "generating_audio", "progress": 2, "total": 3})
-            await generate_audio_segments(project_id, speed=speed, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
+            segments = project.get("segments", [])
+            # For auto-process, always run sync (not background)
+            await _generate_audio_sync(project_id, project, segments, speed, user)
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         
         queue_status[project_id] = {"position": 0, "status": "done"}
