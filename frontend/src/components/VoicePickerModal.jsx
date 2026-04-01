@@ -18,12 +18,6 @@ const EDGE_VOICES = {
   km: { name: "Khmer", male: [{ id: "dara", name: "Piseth (Boy)", code: "km-KH-PisethNeural" }], female: [{ id: "sophea", name: "Sreymom (Girl)", code: "km-KH-SreymomNeural" }] },
 };
 
-const GCLOUD_LANG_MAP = {
-  th: "th-TH", vi: "vi-VN", ko: "ko-KR", ja: "ja-JP", en: "en-US", zh: "cmn-CN",
-  id: "id-ID", hi: "hi-IN", es: "es-ES", fr: "fr-FR", de: "de-DE", pt: "pt-BR",
-  ru: "ru-RU", ar: "ar-XA", it: "it-IT", ms: "ms-MY",
-};
-
 const GEMINI_AGE_MAP = {
   Young: ["Bright", "Youthful", "Excitable", "Upbeat", "Lively", "Friendly", "Casual"],
   Adult: ["Informative", "Firm", "Forward", "Breeze", "Knowledgeable", "Even", "Easy-going", "Smooth", "Clear", "Confident"],
@@ -33,28 +27,13 @@ const GEMINI_AGE_MAP = {
 const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, targetLanguage, isDark, token }) => {
   const d = isDark;
   const [tab, setTab] = useState("edge");
-  const [gcloudVoices, setGcloudVoices] = useState([]);
-  const [gcloudLoading, setGcloudLoading] = useState(false);
   const [geminiVoices, setGeminiVoices] = useState([]);
   const [geminiLoading, setGeminiLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [genderFilter, setGenderFilter] = useState("ALL");
   const [ageFilter, setAgeFilter] = useState("ALL");
-  const [langFilter, setLangFilter] = useState(GCLOUD_LANG_MAP[targetLanguage] ? targetLanguage : "");
   const [playingVoice, setPlayingVoice] = useState(null);
   const audioRef = useRef(null);
-
-  const fetchGcloudVoices = useCallback(async () => {
-    setGcloudLoading(true);
-    try {
-      const langCode = GCLOUD_LANG_MAP[langFilter] || langFilter;
-      const r = await axios.get(`${API}/gcloud-voices`, { params: { language_code: langCode ? langCode.split("-")[0] : undefined } });
-      setGcloudVoices(r.data.voices || []);
-    } catch { setGcloudVoices([]); }
-    finally { setGcloudLoading(false); }
-  }, [langFilter]);
-
-  useEffect(() => { if (open && tab === "gcloud") fetchGcloudVoices(); }, [open, tab, fetchGcloudVoices]);
 
   const fetchGeminiVoices = useCallback(async () => {
     setGeminiLoading(true);
@@ -87,12 +66,6 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
   const stopPreview = () => { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } setPlayingVoice(null); };
 
   useEffect(() => { return () => stopPreview(); }, []);
-
-  const filteredGcloud = gcloudVoices.filter(v => {
-    if (genderFilter !== "ALL" && v.gender !== genderFilter) return false;
-    if (search && !v.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
 
   const edgeLangs = Object.entries(EDGE_VOICES);
 
@@ -133,14 +106,10 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
               className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors ${tab === "gemini" ? (d ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-emerald-600 border-b-2 border-emerald-600') : (d ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-700')}`}>
               Gemini (Free)
             </button>
-            <button onClick={() => setTab("gcloud")}
-              className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors ${tab === "gcloud" ? (d ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-cyan-600 border-b-2 border-cyan-600') : (d ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-700')}`}>
-              Google Cloud (Premium)
-            </button>
           </div>
 
           {/* Filters */}
-          {(tab === "gcloud" || tab === "gemini") && (
+          {tab === "gemini" && (
             <div className={`flex flex-col gap-2 px-5 py-3 border-b ${d ? 'border-zinc-800' : 'border-black/5'}`}>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -148,40 +117,31 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
                   <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search voice name..."
                     className={`w-full pl-8 pr-3 py-1.5 border rounded-sm text-xs outline-none ${d ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-50 border-black/10 text-zinc-950'}`} />
                 </div>
-                {tab === "gcloud" && (
-                  <select value={langFilter} onChange={e => setLangFilter(e.target.value)}
-                    className={`px-2 py-1.5 border rounded-sm text-xs outline-none ${d ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-50 border-black/10 text-zinc-950'}`}>
-                    <option value="">All Languages</option>
-                    {Object.entries(GCLOUD_LANG_MAP).map(([k]) => <option key={k} value={k}>{EDGE_VOICES[k]?.name || k.toUpperCase()}</option>)}
-                  </select>
-                )}
               </div>
-              {tab === "gemini" && (
-                <div className="flex items-center gap-1.5" data-testid="gemini-age-filter">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider mr-1 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>Age:</span>
-                  {["ALL", "Young", "Adult", "Mature"].map(age => (
-                    <button key={age} onClick={() => setAgeFilter(age)} data-testid={`age-filter-${age.toLowerCase()}`}
-                      className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-sm border transition-all ${
-                        ageFilter === age
-                          ? (d ? 'bg-emerald-900/50 border-emerald-600 text-emerald-400' : 'bg-emerald-50 border-emerald-400 text-emerald-700')
-                          : (d ? 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500' : 'bg-white border-black/10 text-zinc-500 hover:border-zinc-300')
-                      }`}>
-                      {age === "ALL" ? "All" : age}
-                    </button>
-                  ))}
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ml-3 mr-1 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>Gender:</span>
-                  {["ALL", "MALE", "FEMALE"].map(g => (
-                    <button key={g} onClick={() => setGenderFilter(g)} data-testid={`gender-filter-${g.toLowerCase()}`}
-                      className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-sm border transition-all ${
-                        genderFilter === g
-                          ? (d ? 'bg-emerald-900/50 border-emerald-600 text-emerald-400' : 'bg-emerald-50 border-emerald-400 text-emerald-700')
-                          : (d ? 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500' : 'bg-white border-black/10 text-zinc-500 hover:border-zinc-300')
-                      }`}>
-                      {g === "ALL" ? "All" : g === "MALE" ? "Boy" : "Girl"}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div className="flex items-center gap-1.5" data-testid="gemini-age-filter">
+                <span className={`text-[10px] font-bold uppercase tracking-wider mr-1 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>Age:</span>
+                {["ALL", "Young", "Adult", "Mature"].map(age => (
+                  <button key={age} onClick={() => setAgeFilter(age)} data-testid={`age-filter-${age.toLowerCase()}`}
+                    className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-sm border transition-all ${
+                      ageFilter === age
+                        ? (d ? 'bg-emerald-900/50 border-emerald-600 text-emerald-400' : 'bg-emerald-50 border-emerald-400 text-emerald-700')
+                        : (d ? 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500' : 'bg-white border-black/10 text-zinc-500 hover:border-zinc-300')
+                    }`}>
+                    {age === "ALL" ? "All" : age}
+                  </button>
+                ))}
+                <span className={`text-[10px] font-bold uppercase tracking-wider ml-3 mr-1 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>Gender:</span>
+                {["ALL", "MALE", "FEMALE"].map(g => (
+                  <button key={g} onClick={() => setGenderFilter(g)} data-testid={`gender-filter-${g.toLowerCase()}`}
+                    className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-sm border transition-all ${
+                      genderFilter === g
+                        ? (d ? 'bg-emerald-900/50 border-emerald-600 text-emerald-400' : 'bg-emerald-50 border-emerald-400 text-emerald-700')
+                        : (d ? 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500' : 'bg-white border-black/10 text-zinc-500 hover:border-zinc-300')
+                    }`}>
+                    {g === "ALL" ? "All" : g === "MALE" ? "Boy" : "Girl"}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -267,55 +227,11 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
                   </div>
                 </div>
               )
-            ) : gcloudLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="animate-spin w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full" />
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <p className={`text-[10px] mb-2 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  {filteredGcloud.length} voices found. Click play to preview, click card to select.
-                </p>
-                {filteredGcloud.map(voice => {
-                  const isMale = voice.gender === "MALE";
-                  const isPlaying = playingVoice === voice.name;
-                  return (
-                    <div key={voice.name} data-testid={`gcloud-voice-${voice.name}`}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-sm border transition-all group cursor-pointer ${
-                        d ? 'bg-zinc-800 border-zinc-700 hover:border-cyan-600' : 'bg-white border-black/10 hover:border-cyan-400'
-                      }`}
-                      onClick={() => onSelect({
-                        provider: "gcloud",
-                        voiceName: voice.name,
-                        voiceLabel: voice.name.split("-").slice(2).join(" "),
-                        gender: isMale ? "male" : "female",
-                        languageCode: voice.language,
-                      })}>
-                      {isMale ? <GenderMale className="w-3.5 h-3.5 text-blue-500" weight="bold" /> : <GenderFemale className="w-3.5 h-3.5 text-pink-500" weight="bold" />}
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-medium truncate ${d ? 'text-zinc-200' : 'text-zinc-700'}`}>{voice.name}</p>
-                        <p className="text-[9px] text-zinc-500">{voice.language} - {voice.gender === "MALE" ? "Boy" : "Girl"}</p>
-                      </div>
-                      <button
-                        onClick={e => { e.stopPropagation(); isPlaying ? stopPreview() : previewGcloudVoice(voice.name, "This is a voice preview."); }}
-                        data-testid={`gcloud-preview-${voice.name}`}
-                        className={`p-1.5 rounded-sm transition-all ${
-                          isPlaying ? 'bg-red-100 text-red-600' : (d ? 'bg-cyan-900/40 text-cyan-400 hover:bg-cyan-900/60' : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100')
-                        }`}>
-                        {isPlaying ? <Stop className="w-3.5 h-3.5" weight="fill" /> : <Play className="w-3.5 h-3.5" weight="fill" />}
-                      </button>
-                      <span className={`text-[9px] font-bold ${d ? 'text-cyan-400' : 'text-cyan-600'}`}>PREMIUM</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            ) : null}
           </div>
-
-          {/* Footer */}
           <div className={`px-5 py-3 border-t flex items-center justify-between ${d ? 'border-zinc-700' : 'border-black/10'}`}>
             <p className="text-[10px] text-zinc-500">
-              {tab === "edge" ? "Microsoft Edge TTS - free and unlimited" : tab === "gemini" ? "Gemini AI voices - free tier with rate limits" : "Google Cloud - ~$0.000004/character"}
+              {tab === "edge" ? "Microsoft Edge TTS - free and unlimited" : "Gemini AI voices - free tier with rate limits"}
             </p>
             <button onClick={onClose} className={`px-4 py-1.5 text-xs font-semibold rounded-sm transition-colors ${d ? 'bg-zinc-800 text-white hover:bg-zinc-700' : 'bg-zinc-100 text-zinc-950 hover:bg-zinc-200'}`}>
               Cancel

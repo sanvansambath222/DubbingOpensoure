@@ -862,18 +862,16 @@ const Editor = () => {
                         {!actor.custom_voice && (
                           <div className="flex items-center gap-1">
                             <div className={`flex-1 text-[10px] px-1.5 py-1 border rounded-md truncate ${d?'bg-zinc-700 text-zinc-200 border-zinc-600':'bg-zinc-50 text-zinc-700 border-zinc-300'}`}>
-                              {actor.tts_provider === 'gcloud' ? (
+                              {actor.tts_provider === 'gemini' ? (
                                 <span className="flex items-center gap-1">
-                                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${d?'bg-cyan-900/40 text-cyan-300':'bg-cyan-50 text-cyan-600'}`}>GC</span>
-                                  {actor.gcloud_voice?.split('-').slice(2).join(' ') || 'Google Voice'}
-                                </span>
-                              ) : actor.tts_provider === 'gemini' ? (
-                                <span className="flex items-center gap-1">
-                                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${d?'bg-emerald-900/40 text-emerald-300':'bg-emerald-50 text-emerald-600'}`}>GM</span>
-                                  {actor.gemini_voice || 'Gemini Voice'}
+                                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${d?'bg-emerald-900/40 text-emerald-300':'bg-emerald-50 text-emerald-600'}`}>Gemini</span>
+                                  {actor.gemini_voice || 'Select voice'}
                                 </span>
                               ) : (
-                                (isMale ? maleVoices : femaleVoices).find(v => v.id === actor.voice)?.name || actor.voice || 'Select voice'
+                                <span className="flex items-center gap-1">
+                                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${d?'bg-zinc-600 text-zinc-300':'bg-zinc-200 text-zinc-600'}`}>Edge</span>
+                                  {(isMale ? maleVoices : femaleVoices).find(v => v.id === actor.voice)?.name || actor.voice || 'Select voice'}
+                                </span>
                               )}
                             </div>
                             <button onClick={() => openVoicePicker(actor.id)} data-testid={`actor-browse-voices-${actor.id}`}
