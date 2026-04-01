@@ -25,9 +25,9 @@ const GCLOUD_LANG_MAP = {
 };
 
 const GEMINI_AGE_MAP = {
-  Young: ["Bright", "Youthful", "Excitable", "Upbeat"],
-  Adult: ["Informative", "Firm", "Forward", "Breeze"],
-  Mature: ["Mature", "Soft", "Gentle"],
+  Young: ["Bright", "Youthful", "Excitable", "Upbeat", "Lively", "Friendly", "Casual"],
+  Adult: ["Informative", "Firm", "Forward", "Breeze", "Knowledgeable", "Even", "Easy-going", "Smooth", "Clear", "Confident"],
+  Mature: ["Mature", "Soft", "Gentle", "Warm", "Gravelly", "Hypnotic"],
 };
 
 const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, targetLanguage, isDark, token }) => {
@@ -221,7 +221,7 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
               ) : (
                 <div className="space-y-1">
                   <p className={`text-[10px] mb-3 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                    {geminiVoices.length} Gemini AI voices. High quality, free tier. Click to select, hover to preview.
+                    {geminiVoices.length} Gemini AI voices. High quality, free tier. Click play to preview, click card to select.
                   </p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {geminiVoices.filter(v => genderFilter === "ALL" || v.gender === genderFilter)
@@ -254,10 +254,11 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
                           </div>
                           <button
                             onClick={e => { e.stopPropagation(); isPlaying ? stopPreview() : previewGcloudVoice(voice.name, "This is a voice preview."); }}
-                            className={`p-1.5 rounded-sm opacity-0 group-hover:opacity-100 transition-all ${
-                              isPlaying ? 'bg-red-100 text-red-600 opacity-100' : (d ? 'bg-zinc-700 text-white hover:bg-zinc-600' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200')
+                            data-testid={`gemini-preview-${voice.name}`}
+                            className={`p-1.5 rounded-sm transition-all ${
+                              isPlaying ? 'bg-red-100 text-red-600' : (d ? 'bg-emerald-900/40 text-emerald-400 hover:bg-emerald-900/60' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100')
                             }`}>
-                            {isPlaying ? <Stop className="w-3 h-3" weight="fill" /> : <Play className="w-3 h-3" weight="fill" />}
+                            {isPlaying ? <Stop className="w-3.5 h-3.5" weight="fill" /> : <Play className="w-3.5 h-3.5" weight="fill" />}
                           </button>
                           <span className="text-[9px] text-emerald-600 font-bold">FREE</span>
                         </div>
@@ -273,7 +274,7 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
             ) : (
               <div className="space-y-1">
                 <p className={`text-[10px] mb-2 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  {filteredGcloud.length} voices found. Click to select, hover play to preview.
+                  {filteredGcloud.length} voices found. Click play to preview, click card to select.
                 </p>
                 {filteredGcloud.map(voice => {
                   const isMale = voice.gender === "MALE";
@@ -293,14 +294,15 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
                       {isMale ? <GenderMale className="w-3.5 h-3.5 text-blue-500" weight="bold" /> : <GenderFemale className="w-3.5 h-3.5 text-pink-500" weight="bold" />}
                       <div className="flex-1 min-w-0">
                         <p className={`text-xs font-medium truncate ${d ? 'text-zinc-200' : 'text-zinc-700'}`}>{voice.name}</p>
-                        <p className="text-[9px] text-zinc-500">{voice.language} - {voice.gender}</p>
+                        <p className="text-[9px] text-zinc-500">{voice.language} - {voice.gender === "MALE" ? "Boy" : "Girl"}</p>
                       </div>
                       <button
                         onClick={e => { e.stopPropagation(); isPlaying ? stopPreview() : previewGcloudVoice(voice.name, "This is a voice preview."); }}
-                        className={`p-1.5 rounded-sm opacity-0 group-hover:opacity-100 transition-all ${
-                          isPlaying ? 'bg-red-100 text-red-600 opacity-100' : (d ? 'bg-zinc-700 text-white hover:bg-zinc-600' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200')
+                        data-testid={`gcloud-preview-${voice.name}`}
+                        className={`p-1.5 rounded-sm transition-all ${
+                          isPlaying ? 'bg-red-100 text-red-600' : (d ? 'bg-cyan-900/40 text-cyan-400 hover:bg-cyan-900/60' : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100')
                         }`}>
-                        {isPlaying ? <Stop className="w-3 h-3" weight="fill" /> : <Play className="w-3 h-3" weight="fill" />}
+                        {isPlaying ? <Stop className="w-3.5 h-3.5" weight="fill" /> : <Play className="w-3.5 h-3.5" weight="fill" />}
                       </button>
                       <span className={`text-[9px] font-bold ${d ? 'text-cyan-400' : 'text-cyan-600'}`}>PREMIUM</span>
                     </div>
