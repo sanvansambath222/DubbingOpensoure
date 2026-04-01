@@ -1192,8 +1192,10 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
 
         # Parallel TTS generation
         import edge_tts
+        gemini_quota_exhausted = False
         
         async def generate_single_tts(seg):
+            nonlocal gemini_quota_exhausted
             speaker = seg.get("speaker", "")
             seg_gender = seg.get("gender", "female")
             for a in actors:
@@ -1228,7 +1230,7 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                 logger.error(f"Google TTS failed after 3 attempts, falling back to Edge TTS")
 
             # Gemini TTS
-            if provider == "gemini" and GEMINI_TTS_API_KEY and speaker in actor_gemini_voice_map:
+            if provider == "gemini" and GEMINI_TTS_API_KEY and speaker in actor_gemini_voice_map and not gemini_quota_exhausted:
                 gemini_voice = actor_gemini_voice_map[speaker]
                 mods = actor_gemini_mods_map.get(speaker, {})
                 # Build tagged text with voice mods
@@ -1246,7 +1248,7 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                 tagged_text = seg["translated"]
                 if tags:
                     tagged_text = f"[{', '.join(tags)}] {tagged_text}"
-                for attempt in range(3):
+                for attempt in range(2):
                     try:
                         audio_bytes = await synthesize_gemini_tts(
                             text=tagged_text,
@@ -1258,14 +1260,16 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                         return (seg, audio_seg)
                     except Exception as e:
                         err_str = str(e)
-                        logger.warning(f"Gemini TTS attempt {attempt+1}/3 failed: {err_str[:150]}")
-                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                            wait_time = 20 * (attempt + 1)
-                            logger.info(f"Gemini rate limited, waiting {wait_time}s before retry...")
-                            await asyncio.sleep(wait_time)
-                        elif attempt < 2:
+                        logger.warning(f"Gemini TTS attempt {attempt+1}/2 failed: {err_str[:150]}")
+                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                            if attempt == 0:
+                                await asyncio.sleep(15)
+                            else:
+                                gemini_quota_exhausted = True
+                                logger.warning("Gemini quota exhausted, switching all remaining to Edge TTS")
+                        elif attempt < 1:
                             await asyncio.sleep(2)
-                logger.error(f"Gemini TTS failed after 3 attempts, falling back to Edge TTS")
+                logger.error(f"Gemini TTS failed, falling back to Edge TTS")
 
             # Edge TTS (default or fallback)
             edge_voice = get_edge_voice(target_lang, seg_gender, actor_ai_voice_map.get(speaker))
