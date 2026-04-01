@@ -1134,6 +1134,7 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
         actor_gcloud_voice_map = {}
         actor_gcloud_lang_map = {}
         actor_gemini_voice_map = {}
+        actor_gemini_mods_map = {}
         for a in actors:
             actor_provider_map[a["id"]] = a.get("tts_provider", "edge")
             if a.get("gcloud_voice"):
@@ -1142,6 +1143,11 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                 actor_gcloud_lang_map[a["id"]] = a["gcloud_language"]
             if a.get("gemini_voice"):
                 actor_gemini_voice_map[a["id"]] = a["gemini_voice"]
+            actor_gemini_mods_map[a["id"]] = {
+                "speed": a.get("gemini_speed", "normal"),
+                "pitch": a.get("gemini_pitch", "normal"),
+                "emotion": a.get("gemini_emotion", "neutral"),
+            }
 
         # Parallel TTS generation
         import edge_tts
@@ -1182,10 +1188,22 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
             # Gemini TTS
             if provider == "gemini" and GEMINI_TTS_API_KEY and speaker in actor_gemini_voice_map:
                 gemini_voice = actor_gemini_voice_map[speaker]
+                mods = actor_gemini_mods_map.get(speaker, {})
+                # Build tagged text with voice mods
+                tags = []
+                if mods.get("emotion", "neutral") != "neutral":
+                    tags.append(mods["emotion"])
+                if mods.get("speed", "normal") != "normal":
+                    tags.append(f"speaking {mods['speed']}")
+                if mods.get("pitch", "normal") != "normal":
+                    tags.append(f"{mods['pitch']} pitch")
+                tagged_text = seg["translated"]
+                if tags:
+                    tagged_text = f"[{', '.join(tags)}] {tagged_text}"
                 for attempt in range(3):
                     try:
                         audio_bytes = await synthesize_gemini_tts(
-                            text=seg["translated"],
+                            text=tagged_text,
                             voice_name=gemini_voice,
                         )
                         audio_seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format="wav")
