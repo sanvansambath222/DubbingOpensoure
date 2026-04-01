@@ -100,7 +100,7 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
           <div className={`flex border-b ${d ? 'border-zinc-700' : 'border-black/10'}`}>
             <button
               className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors ${d ? 'text-white border-b-2 border-white' : 'text-zinc-950 border-b-2 border-zinc-950'}`}>
-              Microsoft Edge TTS (Free)
+              Voice (Free)
             </button>
           </div>
 
@@ -136,7 +136,7 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
           </div>
           <div className={`px-5 py-3 border-t flex items-center justify-between ${d ? 'border-zinc-700' : 'border-black/10'}`}>
             <p className="text-[10px] text-zinc-500">
-              Microsoft Edge TTS - free and unlimited
+              Free voice - unlimited usage
             </p>
             <button onClick={onClose} className={`px-4 py-1.5 text-xs font-semibold rounded-sm transition-colors ${d ? 'bg-zinc-800 text-white hover:bg-zinc-700' : 'bg-zinc-100 text-zinc-950 hover:bg-zinc-200'}`}>
               Cancel
