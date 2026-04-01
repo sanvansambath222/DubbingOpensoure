@@ -1162,6 +1162,7 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
 
             provider = actor_provider_map.get(speaker, "edge")
             seg_duration_ms = int((seg.get("end", 0) - seg.get("start", 0)) * 1000)
+            seg_speed = float(seg.get("speed", "1.0"))
 
             # Google Cloud TTS
             if provider == "gcloud" and GOOGLE_CLOUD_TTS_API_KEY and speaker in actor_gcloud_voice_map:
@@ -1193,7 +1194,11 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                 tags = []
                 if mods.get("emotion", "neutral") != "neutral":
                     tags.append(mods["emotion"])
-                if mods.get("speed", "normal") != "normal":
+                # Per-segment speed overrides actor speed
+                if seg_speed != 1.0:
+                    speed_label = "very slowly" if seg_speed <= 0.5 else "slowly" if seg_speed < 1.0 else "quickly" if seg_speed <= 1.5 else "very quickly"
+                    tags.append(f"speaking {speed_label}")
+                elif mods.get("speed", "normal") != "normal":
                     tags.append(f"speaking {mods['speed']}")
                 if mods.get("pitch", "normal") != "normal":
                     tags.append(f"{mods['pitch']} pitch")
@@ -1224,10 +1229,10 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
             # Edge TTS (default or fallback)
             edge_voice = get_edge_voice(target_lang, seg_gender, actor_ai_voice_map.get(speaker))
             tts_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.mp3")
-            # Retry up to 3 times for Edge TTS
+            edge_rate = int((seg_speed - 1.0) * 100) + speed
             for attempt in range(3):
                 try:
-                    communicate = edge_tts.Communicate(seg["translated"], voice=edge_voice, rate=f"+{speed}%" if speed >= 0 else f"{speed}%")
+                    communicate = edge_tts.Communicate(seg["translated"], voice=edge_voice, rate=f"+{edge_rate}%" if edge_rate >= 0 else f"{edge_rate}%")
                     await communicate.save(tts_path)
                     audio_seg = AudioSegment.from_file(tts_path)
                     os.unlink(tts_path)

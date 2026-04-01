@@ -1053,6 +1053,7 @@ const Editor = () => {
                   <th className="px-2 py-2.5 text-left">Khmer (Translated)</th>
                   <th className="px-2 py-2.5 text-left w-24">Speaker</th>
                   <th className="px-2 py-2.5 text-left w-16">Voice</th>
+                  <th className="px-2 py-2.5 text-center w-20">Speed</th>
                   <th className="px-2 py-2.5 text-left w-32">Add Voice</th>
                   <th className="px-2 py-2.5 text-center w-8"></th>
                 </tr>
@@ -1060,7 +1061,7 @@ const Editor = () => {
               <tbody>
                 {segments.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="text-center py-24 text-zinc-400">
+                    <td colSpan={13} className="text-center py-24 text-zinc-400">
                       <VideoCamera className={`w-10 h-10 mx-auto mb-3 ${d?'text-zinc-600':'text-zinc-300'}`} weight="duotone" />
                       <p className="text-sm">Upload a video and detect speakers to get started</p>
                     </td>
@@ -1137,6 +1138,25 @@ const Editor = () => {
                           ) : (
                             <span className="text-zinc-500 text-[10px]">{actor?.voice || seg.voice}</span>
                           )}
+                        </td>
+                        <td className="px-2 py-2.5 text-center">
+                          <select value={seg.speed || '1.0'} data-testid={`segment-speed-${idx}`}
+                            onChange={(e) => updateSegment(idx, "speed", e.target.value)}
+                            className={`text-[9px] px-1 py-0.5 border rounded outline-none cursor-pointer ${
+                              seg.speed && seg.speed !== '1.0'
+                                ? (d ? 'bg-amber-900/30 border-amber-700/40 text-amber-300' : 'bg-amber-50 border-amber-300 text-amber-700')
+                                : (d ? 'bg-zinc-800 border-zinc-700 text-zinc-400' : 'bg-zinc-50 border-zinc-200 text-zinc-500')
+                            }`}>
+                            <option value="0.5">0.5x</option>
+                            <option value="0.7">0.7x</option>
+                            <option value="0.8">0.8x</option>
+                            <option value="0.9">0.9x</option>
+                            <option value="1.0">1.0x</option>
+                            <option value="1.1">1.1x</option>
+                            <option value="1.2">1.2x</option>
+                            <option value="1.5">1.5x</option>
+                            <option value="2.0">2.0x</option>
+                          </select>
                         </td>
                         <td className="px-3 py-2.5">
                           {seg.custom_audio ? (
