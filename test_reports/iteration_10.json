@@ -1,0 +1,79 @@
+{
+  "summary": "Tested Google Cloud TTS integration and Voice Picker Modal. All 14 backend tests passed (100%). Frontend Voice Picker Modal works correctly with Edge TTS tab showing 22 voices grouped by language, and Google Cloud tab with search, language filter, and gender filters. Voice selection updates actor cards correctly.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Voice Picker Modal - Google Cloud tab",
+        "issues": ["Shows 0 voices when target language is Khmer (km) because Google Cloud TTS doesn't support Khmer. This is expected behavior but could be confusing to users - consider adding a message explaining that Google Cloud doesn't support this language."]
+      }
+    ]
+  },
+
+  "passed_tests": [
+    "GET /api/gcloud-voices with language_code=en returns 260 English voices",
+    "GET /api/gcloud-voices without filter returns 2066 total voices",
+    "POST /api/gcloud-tts-preview returns audio/mpeg blob",
+    "POST /api/gcloud-tts-preview with Wavenet voice works",
+    "POST /api/projects creates new project",
+    "GET /api/projects/{id} returns project details",
+    "PATCH /api/projects/{id} can update actors with gcloud voice settings (tts_provider, gcloud_voice, gcloud_language)",
+    "DELETE /api/projects/{id} deletes project and verifies removal",
+    "GET /api/gcloud-voices with language_code=th returns 32 Thai voices",
+    "GET /api/gcloud-voices with language_code=km returns 0 Khmer voices (expected - not supported)",
+    "GET /api/gcloud-voices with language_code=cmn returns Chinese voices",
+    "POST /api/gcloud-tts-preview with invalid voice returns error",
+    "Voice list caching works (second request uses cache)",
+    "Frontend: Voice Picker Modal opens when clicking Browse button",
+    "Frontend: Edge TTS tab shows 22 free voices grouped by language (Thai, Vietnamese, Korean, Japanese, English, Chinese, Indonesian, Hindi)",
+    "Frontend: Google Cloud tab shows search input, language dropdown, gender filters (All/Boy/Girl)",
+    "Frontend: Selecting Edge voice updates actor card and shows toast notification",
+    "Frontend: Modal closes after voice selection"
+  ],
+
+  "test_report_links": [
+    "/app/backend/tests/test_gcloud_tts_voice_picker.py",
+    "/app/test_reports/pytest/pytest_gcloud_tts.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [
+    "VoicePickerModal correctly initializes langFilter with targetLanguage prop, which means Google Cloud tab will show 0 voices for unsupported languages like Khmer. Consider adding a user-friendly message when no voices are available for the selected language.",
+    "The previewEdgeVoice function in VoicePickerModal.jsx is named misleadingly - it actually calls the Google Cloud TTS preview endpoint (/api/gcloud-tts-preview), not Edge TTS. Consider renaming to previewGcloudVoice for clarity."
+  ],
+
+  "updated_files": [
+    "/app/backend/tests/test_gcloud_tts_voice_picker.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "100% (Voice Picker Modal works correctly)"
+  },
+
+  "test_credentials": "Session Token: test_session_001, User ID: test-user-001",
+
+  "seed_data_creation": "Created and deleted test project proj_3cbd879e94f4 with mock actors for Voice Picker testing",
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Google Cloud TTS integration tested successfully. Backend endpoints /api/gcloud-voices and /api/gcloud-tts-preview work correctly. Voice Picker Modal has two tabs: Edge TTS (free, 22 voices) and Google Cloud (premium, 2066 voices). Google Cloud doesn't support Khmer (km) language - shows 0 voices. Actor data now supports tts_provider ('edge' or 'gcloud'), gcloud_voice, and gcloud_language fields. Test session: test_session_001.",
+
+  "google_cloud_tts_notes": {
+    "supported_languages": "2066 voices across many languages including English (260), Thai (32), Chinese, Japanese, Korean, etc.",
+    "unsupported_languages": "Khmer (km) - returns 0 voices",
+    "api_key_configured": true,
+    "caching": "Voice list cached for 1 hour",
+    "pricing_info": "~$0.000004/character as shown in UI"
+  }
+}

@@ -14,6 +14,7 @@ import {
 import { useAuth, ThemeToggle } from "./AuthContext";
 import { API, GENERATE_TIMEOUT_MS, AUTO_PROCESS_TIMEOUT_MS, PROGRESS_POLL_MS, OUTPUT_LANGUAGES } from "./constants";
 import { StepProgress, ProcessingOverlay } from "./EditorWidgets";
+import VoicePickerModal from "./VoicePickerModal";
 
 const useProjectId = () => {
   const location = useLocation();
@@ -54,6 +55,8 @@ const Editor = () => {
   const [targetLanguage, setTargetLanguage] = useState("km");
   const [ytUrl, setYtUrl] = useState("");
   const [ytLoading, setYtLoading] = useState(null);
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false);
+  const [voicePickerActorId, setVoicePickerActorId] = useState(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordTimerRef = useRef(null);
@@ -236,6 +239,30 @@ const Editor = () => {
       setYtUrl("");
     } catch (e) { toast.error(e.response?.data?.detail || "YouTube download failed"); }
     finally { setYtLoading(null); }
+  };
+
+  const openVoicePicker = (actorId) => {
+    setVoicePickerActorId(actorId);
+    setVoicePickerOpen(true);
+  };
+
+  const handleVoiceSelect = async (voiceData) => {
+    setVoicePickerOpen(false);
+    const actorId = voicePickerActorId;
+    if (!actorId) return;
+    if (voiceData.provider === "edge") {
+      await updateActor(actorId, "voice", voiceData.voiceId);
+      // Clear gcloud settings
+      const updated = actors.map(a => a.id === actorId ? { ...a, voice: voiceData.voiceId, tts_provider: "edge", gcloud_voice: null, gcloud_language: null } : a);
+      setActors(updated);
+      try { await axios.patch(`${API}/projects/${projectId}`, { actors: updated }, { headers: { Authorization: `Bearer ${token}` } }); } catch (err) { console.warn("Save failed:", err.message); }
+      toast.success(`Voice: ${voiceData.voiceName}`);
+    } else if (voiceData.provider === "gcloud") {
+      const updated = actors.map(a => a.id === actorId ? { ...a, tts_provider: "gcloud", gcloud_voice: voiceData.voiceName, gcloud_language: voiceData.languageCode } : a);
+      setActors(updated);
+      try { await axios.patch(`${API}/projects/${projectId}`, { actors: updated }, { headers: { Authorization: `Bearer ${token}` } }); } catch (err) { console.warn("Save failed:", err.message); }
+      toast.success(`Google Voice: ${voiceData.voiceName}`);
+    }
   };
 
   const startRecording = async (segIdx, actorId) => {
@@ -830,12 +857,22 @@ const Editor = () => {
 
                       <div className="space-y-1.5">
                         {!actor.custom_voice && (
-                          <select data-testid={`actor-voice-${actor.id}`}
-                            value={actor.voice || (isMale ? 'dara' : 'sophea')}
-                            onChange={(e) => updateActor(actor.id, 'voice', e.target.value)}
-                            className={`w-full text-[10px] px-1.5 py-1 border rounded-md outline-none ${d?'bg-zinc-700 text-zinc-200 border-zinc-600':'bg-zinc-50 text-zinc-700 border-zinc-300'}`}>
-                            {(isMale ? maleVoices : femaleVoices).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                          </select>
+                          <div className="flex items-center gap-1">
+                            <div className={`flex-1 text-[10px] px-1.5 py-1 border rounded-md truncate ${d?'bg-zinc-700 text-zinc-200 border-zinc-600':'bg-zinc-50 text-zinc-700 border-zinc-300'}`}>
+                              {actor.tts_provider === 'gcloud' ? (
+                                <span className="flex items-center gap-1">
+                                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${d?'bg-cyan-900/40 text-cyan-300':'bg-cyan-50 text-cyan-600'}`}>GC</span>
+                                  {actor.gcloud_voice?.split('-').slice(2).join(' ') || 'Google Voice'}
+                                </span>
+                              ) : (
+                                (isMale ? maleVoices : femaleVoices).find(v => v.id === actor.voice)?.name || actor.voice || 'Select voice'
+                              )}
+                            </div>
+                            <button onClick={() => openVoicePicker(actor.id)} data-testid={`actor-browse-voices-${actor.id}`}
+                              className={`px-2 py-1 text-[9px] font-bold rounded-md border transition-colors ${d?'bg-cyan-900/30 border-cyan-700 text-cyan-300 hover:bg-cyan-900/50':'bg-cyan-50 border-cyan-200 text-cyan-700 hover:bg-cyan-100'}`}>
+                              Browse
+                            </button>
+                          </div>
                         )}
                         {actor.custom_voice ? (
                           <div className={`flex items-center gap-1 px-2 py-1 rounded-md border ${d?'bg-emerald-900/20 border-emerald-700/30':'bg-emerald-50 border-emerald-200'}`}>
@@ -1114,6 +1151,16 @@ const Editor = () => {
           <audio ref={audioRef} src={audioUrl} controls className="flex-1 h-7 opacity-80" />
         </div>
       )}
+
+      <VoicePickerModal
+        open={voicePickerOpen}
+        onClose={() => setVoicePickerOpen(false)}
+        onSelect={handleVoiceSelect}
+        actorGender={actors.find(a => a.id === voicePickerActorId)?.gender || "female"}
+        targetLanguage={targetLanguage}
+        isDark={d}
+        token={token}
+      />
     </div>
   );
 };

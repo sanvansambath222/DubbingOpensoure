@@ -25,6 +25,10 @@ db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 CAMB_API_KEY = os.environ.get('CAMB_API_KEY')
+GOOGLE_CLOUD_TTS_API_KEY = os.environ.get('GOOGLE_CLOUD_TTS_API_KEY')
+
+GOOGLE_TTS_SYNTHESIZE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
+GOOGLE_TTS_VOICES_URL = "https://texttospeech.googleapis.com/v1/voices"
 
 APP_NAME = "khmer-dubbing"
 LOCAL_STORAGE_DIR = Path("/app/uploads")
@@ -1124,6 +1128,17 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
 
         custom_pairs, tts_segments = separate_custom_and_tts_segments(segments, actor_voice_map)
 
+        # Build actor provider map (edge vs gcloud)
+        actor_provider_map = {}
+        actor_gcloud_voice_map = {}
+        actor_gcloud_lang_map = {}
+        for a in actors:
+            actor_provider_map[a["id"]] = a.get("tts_provider", "edge")
+            if a.get("gcloud_voice"):
+                actor_gcloud_voice_map[a["id"]] = a["gcloud_voice"]
+            if a.get("gcloud_language"):
+                actor_gcloud_lang_map[a["id"]] = a["gcloud_language"]
+
         # Parallel TTS generation
         import edge_tts
         
@@ -1134,6 +1149,33 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                 if a["id"] == speaker:
                     seg_gender = a.get("gender", seg_gender)
                     break
+
+            provider = actor_provider_map.get(speaker, "edge")
+            seg_duration_ms = int((seg.get("end", 0) - seg.get("start", 0)) * 1000)
+
+            # Google Cloud TTS
+            if provider == "gcloud" and GOOGLE_CLOUD_TTS_API_KEY and speaker in actor_gcloud_voice_map:
+                gcloud_voice = actor_gcloud_voice_map[speaker]
+                gcloud_lang = actor_gcloud_lang_map.get(speaker, target_lang)
+                for attempt in range(3):
+                    try:
+                        audio_bytes = await synthesize_gcloud_tts(
+                            text=seg["translated"],
+                            voice_name=gcloud_voice,
+                            language_code=gcloud_lang,
+                            speaking_rate=1.0 + (speed / 100.0),
+                        )
+                        audio_seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
+                        if seg_duration_ms > 0:
+                            audio_seg = fit_audio_to_duration(audio_seg, seg_duration_ms)
+                        return (seg, audio_seg)
+                    except Exception as e:
+                        logger.warning(f"Google TTS attempt {attempt+1}/3 failed: {e}")
+                        if attempt < 2:
+                            await asyncio.sleep(1)
+                logger.error(f"Google TTS failed after 3 attempts, falling back to Edge TTS")
+
+            # Edge TTS (default or fallback)
             edge_voice = get_edge_voice(target_lang, seg_gender, actor_ai_voice_map.get(speaker))
             tts_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.mp3")
             # Retry up to 3 times for Edge TTS
@@ -1143,8 +1185,6 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                     await communicate.save(tts_path)
                     audio_seg = AudioSegment.from_file(tts_path)
                     os.unlink(tts_path)
-                    # Auto-fit TTS to segment duration
-                    seg_duration_ms = int((seg.get("end", 0) - seg.get("start", 0)) * 1000)
                     if seg_duration_ms > 0:
                         audio_seg = fit_audio_to_duration(audio_seg, seg_duration_ms)
                     return (seg, audio_seg)
@@ -1543,6 +1583,86 @@ async def get_queue_status(project_id: str, authorization: str = Header(None)):
         "elapsed": round(elapsed, 1),
         "eta": round(eta, 1),
     }
+
+# ===== Google Cloud TTS Integration =====
+
+# Cache voices for 1 hour
+_gcloud_voices_cache = {"data": None, "expires": 0}
+
+@api_router.get("/gcloud-voices")
+async def list_gcloud_voices(language_code: str = Query(None)):
+    """List available Google Cloud TTS voices, optionally filtered by language."""
+    import time as _time
+    if not GOOGLE_CLOUD_TTS_API_KEY:
+        raise HTTPException(status_code=400, detail="Google Cloud TTS not configured")
+
+    now = _time.time()
+    if _gcloud_voices_cache["data"] and now < _gcloud_voices_cache["expires"]:
+        all_voices = _gcloud_voices_cache["data"]
+    else:
+        params = {"key": GOOGLE_CLOUD_TTS_API_KEY}
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(GOOGLE_TTS_VOICES_URL, params=params)
+            if r.status_code != 200:
+                raise HTTPException(status_code=r.status_code, detail="Google Cloud API error")
+            all_voices = r.json().get("voices", [])
+            _gcloud_voices_cache["data"] = all_voices
+            _gcloud_voices_cache["expires"] = now + 3600
+
+    if language_code:
+        all_voices = [v for v in all_voices if any(lc.startswith(language_code) for lc in v.get("languageCodes", []))]
+
+    simplified = []
+    for v in all_voices:
+        simplified.append({
+            "name": v["name"],
+            "language": v["languageCodes"][0] if v.get("languageCodes") else "",
+            "gender": v.get("ssmlGender", "NEUTRAL"),
+            "sample_rate": v.get("naturalSampleRateHertz", 24000),
+        })
+    return {"voices": simplified, "total": len(simplified)}
+
+class GCloudTTSRequest(BaseModel):
+    text: str
+    voice_name: str
+    language_code: str
+    speaking_rate: float = 1.0
+    pitch: float = 0.0
+
+@api_router.post("/gcloud-tts-preview")
+async def preview_gcloud_tts(req: GCloudTTSRequest):
+    """Preview a Google Cloud TTS voice (returns MP3 audio)."""
+    import base64
+    if not GOOGLE_CLOUD_TTS_API_KEY:
+        raise HTTPException(status_code=400, detail="Google Cloud TTS not configured")
+
+    payload = {
+        "input": {"text": req.text},
+        "voice": {"languageCode": req.language_code, "name": req.voice_name},
+        "audioConfig": {"audioEncoding": "MP3", "speakingRate": req.speaking_rate, "pitch": req.pitch},
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{GOOGLE_TTS_SYNTHESIZE_URL}?key={GOOGLE_CLOUD_TTS_API_KEY}", json=payload)
+        if r.status_code != 200:
+            raise HTTPException(status_code=r.status_code, detail=r.json().get("error", {}).get("message", "TTS failed"))
+        audio_bytes = base64.b64decode(r.json()["audioContent"])
+    return Response(content=audio_bytes, media_type="audio/mpeg")
+
+async def synthesize_gcloud_tts(text: str, voice_name: str, language_code: str, speaking_rate: float = 1.0, pitch: float = 0.0) -> bytes:
+    """Synthesize speech using Google Cloud TTS. Returns MP3 bytes."""
+    import base64
+    payload = {
+        "input": {"text": text},
+        "voice": {"languageCode": language_code, "name": voice_name},
+        "audioConfig": {"audioEncoding": "MP3", "speakingRate": speaking_rate, "pitch": pitch},
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{GOOGLE_TTS_SYNTHESIZE_URL}?key={GOOGLE_CLOUD_TTS_API_KEY}", json=payload)
+        if r.status_code != 200:
+            raise Exception(f"Google TTS failed: {r.text[:200]}")
+        return base64.b64decode(r.json()["audioContent"])
+
+
 
 # Auto-process: transcribe + translate + generate audio in one call
 @api_router.post("/projects/{project_id}/auto-process")
