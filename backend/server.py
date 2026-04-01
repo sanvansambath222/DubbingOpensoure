@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Header, UploadFile, File, Response, Query, Form
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -1114,6 +1115,103 @@ async def preview_tts(project_id: str, req: PreviewRequest, authorization: str =
             os.unlink(tts_path)
 
 # Generate timestamp-aligned audio
+@api_router.post("/projects/{project_id}/regenerate-segment/{segment_idx}")
+async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int = Query(0), authorization: str = Header(None)):
+    """Regenerate TTS audio for a single segment after text edit."""
+    import io
+    from pydub import AudioSegment
+    import edge_tts
+
+    user = await get_current_user(authorization)
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    segments = project.get("segments", [])
+    if segment_idx < 0 or segment_idx >= len(segments):
+        raise HTTPException(status_code=400, detail="Invalid segment index")
+    
+    seg = segments[segment_idx]
+    if not seg.get("translated"):
+        raise HTTPException(status_code=400, detail="No translation text")
+
+    actors = project.get("actors", [])
+    target_lang = project.get("target_language", "km")
+    speaker = seg.get("speaker", "")
+    seg_gender = seg.get("gender", "female")
+    seg_speed = float(seg.get("speed", "1.0"))
+    seg_duration_ms = int((seg.get("end", 0) - seg.get("start", 0)) * 1000)
+
+    # Find actor config
+    actor = next((a for a in actors if a["id"] == speaker), None)
+    if actor:
+        seg_gender = actor.get("gender", seg_gender)
+
+    provider = actor.get("tts_provider", "edge") if actor else "edge"
+    audio_seg = None
+
+    # Try Gemini TTS
+    if provider == "gemini" and GEMINI_TTS_API_KEY and actor and actor.get("gemini_voice"):
+        mods = {
+            "speed": actor.get("gemini_speed", "normal"),
+            "pitch": actor.get("gemini_pitch", "normal"),
+            "emotion": actor.get("gemini_emotion", "neutral"),
+        }
+        tags = []
+        if mods["emotion"] != "neutral":
+            tags.append(mods["emotion"])
+        if seg_speed != 1.0:
+            speed_label = "very slowly" if seg_speed <= 0.5 else "slowly" if seg_speed < 1.0 else "quickly" if seg_speed <= 1.5 else "very quickly"
+            tags.append(f"speaking {speed_label}")
+        elif mods["speed"] != "normal":
+            tags.append(f"speaking {mods['speed']}")
+        if mods["pitch"] != "normal":
+            tags.append(f"{mods['pitch']} pitch")
+        tagged_text = seg["translated"]
+        if tags:
+            tagged_text = f"[{', '.join(tags)}] {tagged_text}"
+        try:
+            audio_bytes = await synthesize_gemini_tts(text=tagged_text, voice_name=actor["gemini_voice"])
+            audio_seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format="wav")
+        except Exception as e:
+            logger.warning(f"Gemini TTS failed for segment {segment_idx}, falling back to Edge: {str(e)[:100]}")
+
+    # Fallback to Edge TTS
+    if audio_seg is None:
+        voice_id = actor.get("voice") if actor else None
+        edge_voice = get_edge_voice(target_lang, seg_gender, voice_id)
+        tts_path = os.path.join(tempfile.gettempdir(), f"regen_{uuid.uuid4().hex}.mp3")
+        edge_rate = int((seg_speed - 1.0) * 100) + speed
+        communicate = edge_tts.Communicate(seg["translated"], voice=edge_voice, rate=f"+{edge_rate}%" if edge_rate >= 0 else f"{edge_rate}%")
+        await communicate.save(tts_path)
+        audio_seg = AudioSegment.from_file(tts_path)
+        os.unlink(tts_path)
+
+    if seg_duration_ms > 0:
+        audio_seg = fit_audio_to_duration(audio_seg, seg_duration_ms)
+
+    # Export and return as audio file
+    buf = io.BytesIO()
+    audio_seg.export(buf, format="mp3")
+    buf.seek(0)
+
+    # Save to segment's audio cache
+    audio_filename = f"seg_audio_{project_id}_{segment_idx}_{uuid.uuid4().hex[:6]}.mp3"
+    audio_path = os.path.join(str(LOCAL_STORAGE_DIR), audio_filename)
+    with open(audio_path, "wb") as f:
+        f.write(buf.getvalue())
+    
+    # Update segment with audio path
+    segments[segment_idx]["audio_path"] = audio_filename
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {f"segments.{segment_idx}.audio_path": audio_filename, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="audio/mpeg", headers={"Content-Disposition": f"inline; filename={audio_filename}"})
+
+
 @api_router.post("/projects/{project_id}/generate-audio-segments")
 async def generate_audio_segments(project_id: str, speed: int = Query(2), authorization: str = Header(None)):
     import time

@@ -9,7 +9,7 @@ import {
   GenderMale, GenderFemale, ArrowLeft, Subtitles, FilmStrip,
   Record, Stop, Eye, ShareNetwork, Link, Copy, Globe,
   MusicNote, FileText, MagnifyingGlass, Scissors,
-  ArrowsMerge, PencilSimple, Package, FloppyDisk
+  ArrowsMerge, PencilSimple, Package, FloppyDisk, ArrowsClockwise
 } from "@phosphor-icons/react";
 import { useAuth, ThemeToggle } from "./AuthContext";
 import { API, GENERATE_TIMEOUT_MS, AUTO_PROCESS_TIMEOUT_MS, PROGRESS_POLL_MS, OUTPUT_LANGUAGES } from "./constants";
@@ -354,6 +354,22 @@ const Editor = () => {
       setSegments(r.data.segments || []);
       toast.success("Segment split!");
     } catch (e) { toast.error(e.response?.data?.detail || "Split failed"); }
+  };
+
+  const [regenIdx, setRegenIdx] = useState(null);
+  const regenerateSegment = async (idx) => {
+    setRegenIdx(idx);
+    try {
+      const r = await axios.post(`${API}/projects/${projectId}/regenerate-segment/${idx}`,
+        null,
+        { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob' });
+      // Play the regenerated audio
+      const url = URL.createObjectURL(r.data);
+      const audio = new Audio(url);
+      audio.play();
+      toast.success("Audio regenerated!");
+    } catch (e) { toast.error("Regenerate failed"); }
+    finally { setRegenIdx(null); }
   };
 
   const toggleSelect = (idx) => {
@@ -1101,13 +1117,25 @@ const Editor = () => {
                             className="w-3 h-3 rounded border-black/10 bg-white/5 text-cyan-500 focus:ring-cyan-500/30 cursor-pointer" />
                         </td>
                         <td className="px-1 py-2">
-                          <button onClick={() => previewLine(idx)} disabled={previewingIdx !== null}
-                            data-testid={`segment-play-${idx}`}
-                            className={`w-6 h-6 rounded-sm flex items-center justify-center transition-all ${
-                              previewingIdx === idx ? 'bg-zinc-100 text-zinc-700 animate-pulse' : 'text-zinc-400 hover:text-zinc-700 hover:bg-zinc-50'
-                            }`}>
-                            <Play className="w-3 h-3" weight="fill" />
-                          </button>
+                          <div className="flex items-center gap-0.5">
+                            <button onClick={() => previewLine(idx)} disabled={previewingIdx !== null}
+                              data-testid={`segment-play-${idx}`}
+                              className={`w-6 h-6 rounded-sm flex items-center justify-center transition-all ${
+                                previewingIdx === idx ? 'bg-zinc-100 text-zinc-700 animate-pulse' : 'text-zinc-400 hover:text-zinc-700 hover:bg-zinc-50'
+                              }`}>
+                              <Play className="w-3 h-3" weight="fill" />
+                            </button>
+                            <button onClick={() => regenerateSegment(idx)} disabled={regenIdx !== null}
+                              data-testid={`segment-regen-${idx}`}
+                              title="Regenerate audio for this line"
+                              className={`w-6 h-6 rounded-sm flex items-center justify-center transition-all ${
+                                regenIdx === idx
+                                  ? 'bg-emerald-100 text-emerald-600 animate-spin'
+                                  : 'text-zinc-300 hover:text-emerald-600 hover:bg-emerald-50'
+                              }`}>
+                              <ArrowsClockwise className="w-3 h-3" />
+                            </button>
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-zinc-400 font-mono">{idx + 1}</td>
                         <td className="px-3 py-2.5 text-zinc-500 font-mono">{fmt(seg.start || 0)}</td>
