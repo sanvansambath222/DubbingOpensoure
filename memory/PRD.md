@@ -19,24 +19,49 @@ Khmer, Thai, Vietnamese, Korean, Japanese, English, Chinese, Indonesian, Hindi, 
 - [x] Chunked translation (50 segments per batch for long videos)
 - [x] Real-time progress bar (segments done, %, elapsed, ETA)
 - [x] Output language selector (20 languages in dropdown)
-- [x] Code quality refactor (extracted helpers, sessionStorage, named constants, no hardcoded secrets)
 - [x] YouTube voice extraction via yt-dlp (with Node.js JS runtime)
 - [x] Auto-fit audio (FFmpeg atempo) for both TTS and custom uploaded voices
 - [x] 12-hour auto-cleanup for trial user storage
 - [x] Delete project with full file cleanup (videos, audio, custom voices)
 - [x] Clear All projects button with confirmation dialog
 - [x] Deployment files (Dockerfile, railway.toml)
+- [x] Code refactoring: App.js split into 6 components (44 lines from 1784)
+- [x] Backend refactoring: extracted 10+ helper functions from large handlers
+- [x] Security fix: removed hardcoded test secret
+- [x] Fixed empty catch block, dynamic import
 
 ## Code Architecture (Post-Refactor)
-- **Backend helpers**: `merge_whisper_segments()`, `build_actors_from_segments()`, `apply_speaker_detections()`, `apply_fallback_speakers()`, `get_media_duration_safe()`, `separate_custom_and_tts_segments()`, `mix_audio_timeline()`, `fit_audio_to_duration()`
-- **Constants**: `TTS_BATCH_SIZE`, `TRANSLATE_CHUNK_SIZE`, `POLL_INTERVAL_S`
-- **Auth tokens**: sessionStorage (not localStorage)
-- **Test files**: Use env vars via conftest.py fixtures
-- **yt-dlp config**: js_runtimes={'node': {}}, remote_components={'ejs:github': {}}
+
+### Frontend Components
+- `App.js` (44 lines) - Router only
+- `AuthContext.jsx` - Auth provider, theme toggle, callback, protected route
+- `LandingPage.jsx` - Landing page with features grid
+- `Dashboard.jsx` - Project list with CRUD, Clear All
+- `Editor.jsx` - Main editor with all dubbing features
+- `SharedProject.jsx` - Public shared project view
+- `EditorWidgets.jsx` - StepProgress, ProcessingOverlay
+- `constants.js` - API URL, timeouts, OUTPUT_LANGUAGES config
+
+### Backend Helpers
+- `download_youtube_audio()` - YouTube audio extraction
+- `save_youtube_voice_to_actor()` - Storage & actor assignment
+- `assemble_dubbed_video()` - Video assembly with optional subtitles
+- `merge_whisper_segments()` - Merge short Whisper segments
+- `build_actors_from_segments()` - Actor list from speaker detection
+- `apply_speaker_detections()` / `apply_fallback_speakers()` - Speaker assignment
+- `separate_custom_and_tts_segments()` - Split custom vs TTS audio
+- `mix_audio_timeline()` - Timeline-aligned audio mixing
+- `fit_audio_to_duration()` - Auto-speed audio to fit segment time
+
+### Routes
+- `/` - Landing page
+- `/dashboard` - Project list (protected)
+- `/editor/:projectId` - Editor (protected)
+- `/shared/:shareToken` - Public shared view
 
 ## Backlog
 ### P1
-- [ ] Split App.js into component files (Editor, Player, ActorCard, ProjectList)
+- (Completed) Split App.js into component files
 
 ### P2
 - [ ] Voice Library (browse & preview voices)
