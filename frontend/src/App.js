@@ -206,11 +206,21 @@ const Dashboard = () => {
 
   const deleteProject = async (e, pid) => {
     e.stopPropagation();
+    if (!window.confirm("Delete this project and all its files?")) return;
     try {
       await axios.delete(`${API}/projects/${pid}`, { headers: { Authorization: `Bearer ${token}` } });
       setProjects(projects.filter(p => p.project_id !== pid));
       toast.success("Project deleted");
     } catch { toast.error("Delete failed"); }
+  };
+
+  const clearAllProjects = async () => {
+    if (!window.confirm("Delete ALL projects? This cannot be undone.")) return;
+    try {
+      const r = await axios.delete(`${API}/projects`, { headers: { Authorization: `Bearer ${token}` } });
+      setProjects([]);
+      toast.success(`Cleared ${r.data.deleted} projects`);
+    } catch { toast.error("Clear failed"); }
   };
 
   const duplicateProject = async (e, pid) => {
@@ -277,10 +287,18 @@ const Dashboard = () => {
       <main className="max-w-6xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-8">
           <h1 className={`text-2xl font-semibold ${d?'text-white':'text-zinc-950'}`} style={{ fontFamily: "'Outfit', sans-serif" }}>Your Projects</h1>
-          <button onClick={createProject} data-testid="new-project-btn"
-            className={`px-5 py-2.5 text-sm font-semibold rounded-sm transition-colors flex items-center gap-2 ${d?'bg-white text-zinc-950 hover:bg-zinc-200':'bg-zinc-950 text-white hover:bg-zinc-800'}`}>
-            <Plus className="w-4 h-4" weight="bold" /> New Project
-          </button>
+          <div className="flex items-center gap-2">
+            {projects.length > 0 && (
+              <button onClick={clearAllProjects} data-testid="clear-all-projects-btn"
+                className={`px-4 py-2.5 text-sm font-semibold rounded-sm transition-colors flex items-center gap-2 ${d?'bg-red-900/40 text-red-400 hover:bg-red-900/60 border border-red-800':'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'}`}>
+                <Trash className="w-4 h-4" /> Clear All
+              </button>
+            )}
+            <button onClick={createProject} data-testid="new-project-btn"
+              className={`px-5 py-2.5 text-sm font-semibold rounded-sm transition-colors flex items-center gap-2 ${d?'bg-white text-zinc-950 hover:bg-zinc-200':'bg-zinc-950 text-white hover:bg-zinc-800'}`}>
+              <Plus className="w-4 h-4" weight="bold" /> New Project
+            </button>
+          </div>
         </div>
 
         {loading ? (

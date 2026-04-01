@@ -539,10 +539,65 @@ async def update_project(project_id: str, update: ProjectUpdate, authorization: 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    result = await db.projects.delete_one({"project_id": project_id, "user_id": user.user_id})
-    if result.deleted_count == 0:
+    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    # Delete stored files
+    for key in ["original_file_path", "dubbed_audio_path", "dubbed_video_path"]:
+        file_path = project.get(key)
+        if file_path:
+            try:
+                delete_object(file_path)
+            except Exception:
+                pass
+    # Delete actor custom voices
+    for actor in project.get("actors", []):
+        if actor.get("custom_voice"):
+            try:
+                delete_object(actor["custom_voice"])
+            except Exception:
+                pass
+    # Delete segment custom audio
+    for seg in project.get("segments", []):
+        if seg.get("custom_audio"):
+            try:
+                delete_object(seg["custom_audio"])
+            except Exception:
+                pass
+    # Delete project folder
+    project_dir = LOCAL_STORAGE_DIR / APP_NAME / project_id
+    if project_dir.exists():
+        import shutil
+        try:
+            shutil.rmtree(project_dir)
+        except Exception:
+            pass
+    await db.projects.delete_one({"project_id": project_id})
     return {"success": True}
+
+@api_router.delete("/projects")
+async def delete_all_projects(authorization: str = Header(None)):
+    user = await get_current_user(authorization)
+    projects = await db.projects.find({"user_id": user.user_id}).to_list(1000)
+    deleted = 0
+    for project in projects:
+        for key in ["original_file_path", "dubbed_audio_path", "dubbed_video_path"]:
+            file_path = project.get(key)
+            if file_path:
+                try:
+                    delete_object(file_path)
+                except Exception:
+                    pass
+        project_dir = LOCAL_STORAGE_DIR / APP_NAME / project["project_id"]
+        if project_dir.exists():
+            import shutil
+            try:
+                shutil.rmtree(project_dir)
+            except Exception:
+                pass
+        deleted += 1
+    await db.projects.delete_many({"user_id": user.user_id})
+    return {"success": True, "deleted": deleted}
 
 # Duplicate project
 @api_router.post("/projects/{project_id}/duplicate")

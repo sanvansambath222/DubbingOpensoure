@@ -23,6 +23,8 @@ Khmer, Thai, Vietnamese, Korean, Japanese, English, Chinese, Indonesian, Hindi, 
 - [x] YouTube voice extraction via yt-dlp (with Node.js JS runtime)
 - [x] Auto-fit audio (FFmpeg atempo) for both TTS and custom uploaded voices
 - [x] 12-hour auto-cleanup for trial user storage
+- [x] Delete project with full file cleanup (videos, audio, custom voices)
+- [x] Clear All projects button with confirmation dialog
 - [x] Deployment files (Dockerfile, railway.toml)
 
 ## Code Architecture (Post-Refactor)
