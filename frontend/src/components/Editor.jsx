@@ -37,6 +37,7 @@ const Editor = () => {
   const [audioUrl, setAudioUrl] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
   const [burnSubs, setBurnSubs] = useState(false);
+  const [bgVolume, setBgVolume] = useState(0);
   const [ttsSpeed, setTtsSpeed] = useState(2);
   const [previewingIdx, setPreviewingIdx] = useState(null);
   const [originalVideoUrl, setOriginalVideoUrl] = useState(null);
@@ -145,7 +146,7 @@ const Editor = () => {
     setProcessingMsg("Generating voices...");
     startProgressPoll();
     try {
-      const r = await axios.post(`${API}/projects/${projectId}/generate-audio-segments?speed=${ttsSpeed}`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 900000 });
+      const r = await axios.post(`${API}/projects/${projectId}/generate-audio-segments?speed=${ttsSpeed}&bg_volume=${bgVolume}`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 900000 });
       if (r.data.status === "processing") {
         // Long video - background processing, poll until done
         toast.info(r.data.message || "Processing in background...");
@@ -697,6 +698,27 @@ const Editor = () => {
                 <div className="flex justify-between text-[9px] text-zinc-400 mt-0.5">
                   <span>Slow</span><span>Normal</span><span>Fast</span>
                 </div>
+              </div>
+            )}
+
+            {segments.some(s => s.translated || s.custom_audio) && project?.file_type === 'video' && (
+              <div className={`rounded-sm p-3 border ${d?'bg-zinc-800 border-zinc-700':'bg-zinc-50 border-zinc-200'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${d?'text-zinc-400':'text-zinc-500'}`}>Original Audio</span>
+                  <span className={`text-[10px] font-bold ${bgVolume === 0 ? (d?'text-red-400':'text-red-500') : (d?'text-emerald-400':'text-emerald-600')}`}>
+                    {bgVolume === 0 ? 'OFF' : `${bgVolume}%`}
+                  </span>
+                </div>
+                <input type="range" min={0} max={100} step={5} value={bgVolume}
+                  onChange={e => setBgVolume(Number(e.target.value))}
+                  data-testid="bg-volume-slider"
+                  className="w-full h-1 bg-zinc-200 rounded-sm appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:rounded-sm" />
+                <div className="flex justify-between text-[9px] text-zinc-400 mt-0.5">
+                  <span>Off</span><span>Low</span><span>Full</span>
+                </div>
+                <p className={`text-[9px] mt-1 ${d?'text-zinc-600':'text-zinc-400'}`}>
+                  {bgVolume === 0 ? 'No original audio - only dubbed voice' : 'Keeps background music + sound effects'}
+                </p>
               </div>
             )}
 

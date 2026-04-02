@@ -1309,7 +1309,7 @@ async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int
 
 
 @api_router.post("/projects/{project_id}/generate-audio-segments")
-async def generate_audio_segments(project_id: str, speed: int = Query(2), authorization: str = Header(None)):
+async def generate_audio_segments(project_id: str, speed: int = Query(2), bg_volume: int = Query(0), authorization: str = Header(None)):
     import time
     import io
     from pydub import AudioSegment
@@ -1324,15 +1324,15 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
 
     # For long videos (>100 segments), run in background
     if len(segments) > 100:
-        asyncio.create_task(_generate_audio_background(project_id, project, segments, speed, user))
+        asyncio.create_task(_generate_audio_background(project_id, project, segments, speed, user, bg_volume))
         return {"status": "processing", "message": f"Generating audio for {len(segments)} segments in background. Check progress bar."}
 
-    return await _generate_audio_sync(project_id, project, segments, speed, user)
+    return await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
 
-async def _generate_audio_background(project_id, project, segments, speed, user):
+async def _generate_audio_background(project_id, project, segments, speed, user, bg_volume=0):
     """Background audio generation for long videos."""
     try:
-        await _generate_audio_sync(project_id, project, segments, speed, user)
+        await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
     except Exception as e:
         logger.error(f"Background audio generation failed: {e}")
         await db.projects.update_one(
@@ -1340,7 +1340,7 @@ async def _generate_audio_background(project_id, project, segments, speed, user)
             {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
         )
 
-async def _generate_audio_sync(project_id, project, segments, speed, user):
+async def _generate_audio_sync(project_id, project, segments, speed, user, bg_volume=0):
     import io
     from pydub import AudioSegment
     import edge_tts
@@ -1525,10 +1525,10 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
 
         combined = mix_audio_timeline(segment_audio_pairs, segments, total_duration_ms, has_timestamps)
 
-        # Mix with background audio (original music/sfx) if video project
-        if project.get("file_type") == "video" and project.get("original_file_path"):
+        # Mix with background audio (original music/sfx) if video project and bg_volume > 0
+        if bg_volume > 0 and project.get("file_type") == "video" and project.get("original_file_path"):
             try:
-                logger.info("Extracting background audio from original video...")
+                logger.info(f"Extracting background audio (volume: {bg_volume}%)...")
                 video_data, _ = get_object(project["original_file_path"])
                 ext = project.get("original_filename", "video.mp4").split(".")[-1]
                 tmp_video = os.path.join(tempfile.gettempdir(), f"bg_{uuid.uuid4().hex}.{ext}")
@@ -1537,8 +1537,12 @@ async def _generate_audio_sync(project_id, project, segments, speed, user):
                 bg_bytes = extract_background_audio(tmp_video)
                 os.unlink(tmp_video)
                 if bg_bytes:
-                    logger.info("Mixing dubbed audio with background music...")
-                    combined = mix_with_background(combined, bg_bytes, bg_volume=-14)
+                    # Convert bg_volume (0-100%) to dB reduction
+                    # 100% = 0dB (full), 50% = -10dB, 25% = -20dB, 10% = -30dB
+                    import math
+                    db_reduction = 0 if bg_volume >= 100 else int(-40 * (1 - bg_volume / 100))
+                    logger.info(f"Mixing background at {bg_volume}% ({db_reduction}dB)...")
+                    combined = mix_with_background(combined, bg_bytes, bg_volume=db_reduction)
                     logger.info("Background music mixed successfully")
             except Exception as e:
                 logger.warning(f"Background audio extraction/mixing failed, continuing without: {e}")
@@ -2078,7 +2082,7 @@ async def synthesize_gemini_tts(text: str, voice_name: str) -> bytes:
 
 # Auto-process: transcribe + translate + generate audio in one call
 @api_router.post("/projects/{project_id}/auto-process")
-async def auto_process(project_id: str, speed: int = Query(2), target_language: str = Query("km"), authorization: str = Header(None)):
+async def auto_process(project_id: str, speed: int = Query(2), target_language: str = Query("km"), bg_volume: int = Query(0), authorization: str = Header(None)):
     from emergentintegrations.llm.openai import OpenAISpeechToText
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     
@@ -2115,7 +2119,7 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
             queue_status[project_id].update({"step": "generating_audio", "progress": 2, "total": 3})
             segments = project.get("segments", [])
             # For auto-process, always run sync (not background)
-            await _generate_audio_sync(project_id, project, segments, speed, user)
+            await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         
         queue_status[project_id] = {"position": 0, "status": "done"}
