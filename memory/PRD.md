@@ -17,8 +17,8 @@ voxidub.com / dubcambodia.com (DNS setup in progress)
 - LandingPage.jsx - Marketing/auth entry
 - Dashboard.jsx - Project listing
 - Editor.jsx - Main editor with segments, actors, voice controls, extract background
-- VoicePickerModal.jsx - Voice selection (Edge TTS only)
-- EditorWidgets.jsx - Reusable editor UI pieces
+- VoicePickerModal.jsx - Voice selection (Edge TTS + Meta MMS)
+- EditorWidgets.jsx - Reusable editor UI pieces (progress bar, processing overlay)
 - SharedProject.jsx - Public sharing view
 - AuthContext.jsx - Auth state management
 
@@ -27,6 +27,7 @@ voxidub.com / dubcambodia.com (DNS setup in progress)
 - [x] Whisper transcription (via Emergent LLM key)
 - [x] GPT-5.2 translation (via Emergent LLM key)
 - [x] Microsoft Edge TTS (free, unlimited)
+- [x] Meta MMS Khmer TTS (open source, free, local AI voice)
 - [x] Custom voice upload (file + YouTube yt-dlp extraction)
 - [x] Long video processing (1h+, MP3 format, 15min timeouts)
 - [x] Component refactoring (App.js split into 6 modules)
@@ -37,15 +38,13 @@ voxidub.com / dubcambodia.com (DNS setup in progress)
 - [x] Per-line speaker reassignment dropdown
 - [x] Per-line audio regenerate button
 - [x] Actor line filter (click line count to filter segments)
-- [x] Background music preservation (extract + mix with dubbed audio)
-- [x] Cross-origin Script error suppression
-- [x] Bulk DB cleanup optimization (delete_many)
-- [x] Deployment health check passed x2
+- [x] Background music preservation (Demucs AI vocal removal)
+- [x] Background Volume slider (0% to 100%)
+- [x] Extract Background Audio button (download music-only file)
+- [x] Demucs chunked processing with progress bar (30s chunks)
+- [x] Background async processing (no proxy timeout)
 - [x] Email/Password authentication (Register/Login)
 - [x] Emergent Google OAuth
-- [x] Background Volume slider (0% to 100%)
-- [x] Demucs AI vocal removal - FIXED (Python API, removes human voice, keeps music)
-- [x] Extract Background Audio button (download music-only file)
 - [x] App renamed to VoxiDub
 
 ## Removed Features
@@ -57,7 +56,8 @@ voxidub.com / dubcambodia.com (DNS setup in progress)
 - [ ] Usage limits per plan (credits, video counts)
 
 ## Future Tasks
-- [ ] AI voice cloning & auto lip sync (P1)
+- [ ] AI voice cloning (Fish Speech or similar) (P1)
+- [ ] Auto lip sync (P1)
 - [ ] Mobile-friendly layout (P2)
 - [ ] Export different video quality (P2)
 - [ ] Team workspace (P3)
@@ -67,11 +67,13 @@ voxidub.com / dubcambodia.com (DNS setup in progress)
 - OpenAI GPT-5.2 (Translation) - Emergent LLM Key
 - OpenAI Whisper (Transcription) - Emergent LLM Key
 - Microsoft Edge TTS - Free / No Key
+- Meta MMS TTS (facebook/mms-tts-khm) - Free / Local / Open Source
 - Demucs AI (Meta) - Local execution via Python API
 
 ## Known Issues
 - FFmpeg missing on container restart (reinstall via apt-get)
 - Demucs uses significant RAM for long audio files
+- HuggingFace may rate-limit; MMS model cached at /root/.cache/mms-tts-khm
 
 ## DB Schema
 - projects: {project_id, user_id, title, target_language, status, segments[], actors[], file_type, original_file_path, dubbed_audio_path, dubbed_video_path, bg_audio_path, bg_volume, created_at}
@@ -79,6 +81,7 @@ voxidub.com / dubcambodia.com (DNS setup in progress)
 - user_sessions: {session_token, user_id, expires_at, created_at}
 
 ## Technical Notes
-- Demucs uses Python API (get_model + apply_model + soundfile) instead of CLI due to torchaudio CUDA dependency issues
-- torchaudio 2.11.0+cpu installed but NOT used for I/O (soundfile handles loading/saving)
-- scipy used for resampling when audio sample rate doesn't match model's expected rate
+- Demucs uses Python API (get_model + apply_model + soundfile) in 30s chunks
+- Meta MMS loaded lazily via transformers VitsModel at 16kHz
+- torchaudio 2.11.0+cpu installed but NOT used for I/O (soundfile handles it)
+- Audio generation runs in background when Demucs is needed (bg_volume > 0 on video)
