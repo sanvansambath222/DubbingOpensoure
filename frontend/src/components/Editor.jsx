@@ -518,7 +518,7 @@ const Editor = () => {
     startProgressPoll();
     try {
       const r = await axios.post(`${API}/projects/${projectId}/auto-process?speed=${ttsSpeed}&target_language=${targetLanguage}&bg_volume=${bgVolume}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }, timeout: 900000
+        headers: { Authorization: `Bearer ${token}` }, timeout: 30000
       });
       if (r.data.status === "processing") {
         toast.info(r.data.message || "Processing in background...");

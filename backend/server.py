@@ -2475,44 +2475,46 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
     import time as _time
     queue_status[project_id] = {"position": 0, "status": "processing", "step": "starting", "progress": 0, "total": 3, "started_at": _time.time()}
     
-    try:
-        # Step 1: Transcribe (if not done)
-        if project.get("status") in ["created", "uploaded"]:
-            queue_status[project_id].update({"step": "transcribing", "progress": 0, "total": 3})
+    auth_header = f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}"
+    
+    async def _auto_process_background():
+        nonlocal project
+        try:
+            # Step 1: Transcribe (if not done)
+            if project.get("status") in ["created", "uploaded"]:
+                queue_status[project_id].update({"step": "transcribing", "progress": 0, "total": 3})
+                await db.projects.update_one(
+                    {"project_id": project_id},
+                    {"$set": {"status": "transcribing", "updated_at": datetime.now(timezone.utc).isoformat()}}
+                )
+                await transcribe_segments(project_id, authorization=auth_header)
+                project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+            
+            # Step 2: Translate (if not done)
+            if project.get("status") == "transcribed":
+                queue_status[project_id].update({"step": "translating", "progress": 1, "total": 3})
+                await translate_segments(project_id, target_language=target_language, authorization=auth_header)
+                project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+            
+            # Step 3: Generate audio (if not done)
+            if project.get("status") == "translated":
+                queue_status[project_id].update({"step": "generating_audio", "progress": 2, "total": 3})
+                segments = project.get("segments", [])
+                await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
+                project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+            
+            queue_status[project_id] = {"position": 0, "status": "done", "step": "done"}
+            
+        except Exception as e:
+            queue_status[project_id] = {"position": 0, "status": "error", "step": "error"}
+            logger.error(f"Auto-process error: {e}")
             await db.projects.update_one(
                 {"project_id": project_id},
-                {"$set": {"status": "transcribing", "updated_at": datetime.now(timezone.utc).isoformat()}}
+                {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
             )
-            # Call transcribe endpoint logic internally
-            await transcribe_segments(project_id, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
-            project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
-        
-        # Step 2: Translate (if not done)
-        if project.get("status") == "transcribed":
-            queue_status[project_id].update({"step": "translating", "progress": 1, "total": 3})
-            await translate_segments(project_id, target_language=target_language, authorization=f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}")
-            project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
-        
-        # Step 3: Generate audio (if not done)
-        if project.get("status") == "translated":
-            queue_status[project_id].update({"step": "generating_audio", "progress": 2, "total": 3})
-            segments = project.get("segments", [])
-            # If Demucs needed (bg_volume > 0 on video), run in background to avoid proxy timeout
-            if bg_volume > 0 and project.get("file_type") == "video":
-                asyncio.create_task(_generate_audio_background(project_id, project, segments, speed, user, bg_volume))
-                queue_status[project_id] = {"position": 0, "status": "processing", "step": "generating_audio"}
-                return {"status": "processing", "message": "Generating audio with background music extraction. This takes 2-3 minutes."}
-            else:
-                await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
-            project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
-        
-        queue_status[project_id] = {"position": 0, "status": "done"}
-        return project
-        
-    except Exception as e:
-        queue_status[project_id] = {"position": 0, "status": "error"}
-        logger.error(f"Auto-process error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    
+    asyncio.create_task(_auto_process_background())
+    return {"status": "processing", "message": "Auto-processing started. Detecting speakers, translating, generating audio..."}
 
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
