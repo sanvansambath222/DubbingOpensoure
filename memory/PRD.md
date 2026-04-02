@@ -3,85 +3,53 @@
 ## Problem Statement
 Build a video/audio dubbing platform (Any Language to Any Language) with AI transcription, translation, TTS voices, subtitle editing, and AI vocal removal.
 
-## Domain
-voxidub.com / dubcambodia.com (DNS setup in progress)
-
 ## Architecture
-- Frontend: React (modularized components)
-- Backend: FastAPI (Python)
-- Database: MongoDB
-- Storage: Local file storage (/app/uploads)
+- Frontend: React | Backend: FastAPI | Database: MongoDB | Storage: Local (/app/uploads)
 - Auth: Email/Password + Emergent Google OAuth
-
-## Components
-- LandingPage.jsx - Marketing/auth entry
-- Dashboard.jsx - Project listing
-- Editor.jsx - Main editor with segments, actors, voice controls, extract background
-- VoicePickerModal.jsx - Voice selection (Edge TTS + Meta MMS)
-- EditorWidgets.jsx - Reusable editor UI pieces (progress bar, processing overlay)
-- SharedProject.jsx - Public sharing view
-- AuthContext.jsx - Auth state management
 
 ## Completed Features
 - [x] Video/audio upload and processing
-- [x] Whisper transcription (via Emergent LLM key)
-- [x] GPT-5.2 translation (via Emergent LLM key)
-- [x] Microsoft Edge TTS (free, unlimited)
-- [x] Meta MMS Khmer TTS (open source, free, local AI voice)
-- [x] Custom voice upload (file + YouTube yt-dlp extraction)
-- [x] Long video processing (1h+, MP3 format, 15min timeouts)
-- [x] Component refactoring (App.js split into 6 modules)
-- [x] Auto-cleanup job (12h project expiry)
-- [x] Clear All Projects functionality
-- [x] Deployment-ready configs (Dockerfile, railway.toml)
-- [x] Per-line speed control (0.5x to 2.0x)
-- [x] Per-line speaker reassignment dropdown
-- [x] Per-line audio regenerate button
-- [x] Actor line filter (click line count to filter segments)
-- [x] Background music preservation (Demucs AI vocal removal)
-- [x] Background Volume slider (0% to 100%)
-- [x] Extract Background Audio button (download music-only file)
-- [x] Demucs chunked processing with progress bar (30s chunks)
+- [x] Whisper transcription + GPT-5.2 translation (Emergent LLM Key)
+- [x] Microsoft Edge TTS: Piseth (male) + Sreymom (female) - FREE
+- [x] Meta MMS Khmer TTS: Meta AI (male) - FREE, open source
+- [x] KLEA Khmer TTS: KLEA (male) - FREE, open source, word-by-word
+- [x] Custom voice upload (file + YouTube)
+- [x] Demucs AI vocal removal (chunked, with progress bar)
+- [x] Background Volume slider (0%-100%)
+- [x] Extract Background Audio download button
 - [x] Background async processing (no proxy timeout)
-- [x] Email/Password authentication (Register/Login)
-- [x] Emergent Google OAuth
+- [x] Per-line regenerate, speed control, speaker reassignment
+- [x] Email/Password auth + Google OAuth
+- [x] Auto-cleanup job, Clear All Projects
 - [x] App renamed to VoxiDub
 
-## Removed Features
-- Google Cloud TTS (removed per user request)
-- Gemini TTS (removed - API quota issues on free tier)
+## Khmer Voice Options
+| Voice | Provider | Type | Quality |
+|-------|----------|------|---------|
+| Piseth (Boy) | Edge TTS | Full sentence | Medium (robot-like) |
+| Sreymom (Girl) | Edge TTS | Full sentence | Medium (robot-like) |
+| Meta AI (Boy) | Meta MMS | Full sentence | Good (AI) |
+| KLEA (Boy) | KLEA/VITS | Word-by-word | Unique (choppy) |
 
 ## Upcoming Tasks (P0)
 - [ ] Stripe payment integration (Free/Basic/Pro/Business)
 - [ ] Usage limits per plan (credits, video counts)
 
 ## Future Tasks
-- [ ] AI voice cloning (Fish Speech or similar) (P1)
+- [ ] AI voice cloning (P1)
 - [ ] Auto lip sync (P1)
 - [ ] Mobile-friendly layout (P2)
 - [ ] Export different video quality (P2)
 - [ ] Team workspace (P3)
-- [ ] Multi-language UI (P3)
 
 ## 3rd Party Integrations
-- OpenAI GPT-5.2 (Translation) - Emergent LLM Key
-- OpenAI Whisper (Transcription) - Emergent LLM Key
-- Microsoft Edge TTS - Free / No Key
-- Meta MMS TTS (facebook/mms-tts-khm) - Free / Local / Open Source
-- Demucs AI (Meta) - Local execution via Python API
+- OpenAI GPT-5.2 + Whisper (Emergent LLM Key)
+- Microsoft Edge TTS (Free)
+- Meta MMS TTS facebook/mms-tts-khm (Free, local, /root/.cache/mms-tts-khm)
+- KLEA TTS seanghay/KLEA (Free, local, /root/.cache/klea/G_60000.pth)
+- Demucs AI vocal removal (Free, local Python API)
 
 ## Known Issues
 - FFmpeg missing on container restart (reinstall via apt-get)
-- Demucs uses significant RAM for long audio files
-- HuggingFace may rate-limit; MMS model cached at /root/.cache/mms-tts-khm
-
-## DB Schema
-- projects: {project_id, user_id, title, target_language, status, segments[], actors[], file_type, original_file_path, dubbed_audio_path, dubbed_video_path, bg_audio_path, bg_volume, created_at}
-- users: {user_id, email, name, picture, auth_provider, password_hash, created_at}
-- user_sessions: {session_token, user_id, expires_at, created_at}
-
-## Technical Notes
-- Demucs uses Python API (get_model + apply_model + soundfile) in 30s chunks
-- Meta MMS loaded lazily via transformers VitsModel at 16kHz
-- torchaudio 2.11.0+cpu installed but NOT used for I/O (soundfile handles it)
-- Audio generation runs in background when Demucs is needed (bg_volume > 0 on video)
+- KLEA requires G_60000.pth in /root/.cache/klea/ (must be re-downloaded on restart)
+- HuggingFace rate limiting (use hf-mirror.com as fallback)

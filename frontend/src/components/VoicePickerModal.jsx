@@ -5,7 +5,7 @@ import axios from "axios";
 import { API } from "./constants";
 
 const EDGE_VOICES = {
-  km: { name: "Khmer", male: [{ id: "dara", name: "Piseth (Boy)", code: "km-KH-PisethNeural" }, { id: "mms_khmer", name: "Meta AI (Boy)", code: "mms-tts-khm" }], female: [{ id: "sophea", name: "Sreymom (Girl)", code: "km-KH-SreymomNeural" }] },
+  km: { name: "Khmer", male: [{ id: "dara", name: "Piseth (Boy)", code: "km-KH-PisethNeural" }, { id: "mms_khmer", name: "Meta AI (Boy)", code: "mms-tts-khm" }, { id: "klea_khmer", name: "KLEA (Boy)", code: "klea-khm" }], female: [{ id: "sophea", name: "Sreymom (Girl)", code: "km-KH-SreymomNeural" }] },
   th: { name: "Thai", male: [{ id: "th_m1", name: "Niwat (Boy)", code: "th-TH-NiwatNeural" }], female: [{ id: "th_f1", name: "Premwadee (Girl)", code: "th-TH-PremwadeeNeural" }] },
   vi: { name: "Vietnamese", male: [{ id: "vi_m1", name: "NamMinh (Boy)", code: "vi-VN-NamMinhNeural" }], female: [{ id: "vi_f1", name: "HoaiMy (Girl)", code: "vi-VN-HoaiMyNeural" }] },
   ko: { name: "Korean", male: [{ id: "ko_m1", name: "InJoon (Boy)", code: "ko-KR-InJoonNeural" }], female: [{ id: "ko_f1", name: "SunHi (Girl)", code: "ko-KR-SunHiNeural" }] },
@@ -118,15 +118,17 @@ const VoicePickerModal = ({ open, onClose, onSelect, actorGender, actorName, tar
                       {[...lang.male, ...lang.female].map(voice => {
                         const isMale = lang.male.includes(voice);
                         const isMMS = voice.id.startsWith("mms_");
+                        const isKLEA = voice.id.startsWith("klea_");
+                        const isAI = isMMS || isKLEA;
                         return (
                           <button key={voice.id} data-testid={`edge-voice-${voice.id}`}
-                            onClick={() => onSelect({ provider: isMMS ? "mms" : "edge", voiceId: voice.id, voiceName: voice.name, gender: isMale ? "male" : "female" })}
+                            onClick={() => onSelect({ provider: isAI ? (isMMS ? "mms" : "klea") : "edge", voiceId: voice.id, voiceName: voice.name, gender: isMale ? "male" : "female" })}
                             className={`flex items-center gap-2 px-3 py-2 rounded-sm border text-left transition-all group ${
                               d ? 'bg-zinc-800 border-zinc-700 hover:border-zinc-500' : 'bg-white border-black/10 hover:border-zinc-400'
                             }`}>
                             {isMale ? <GenderMale className="w-3.5 h-3.5 text-blue-500" weight="bold" /> : <GenderFemale className="w-3.5 h-3.5 text-pink-500" weight="bold" />}
                             <span className={`text-xs font-medium flex-1 ${d ? 'text-zinc-200' : 'text-zinc-700'}`}>{voice.name}</span>
-                            {isMMS ? <span className="text-[9px] text-cyan-600 font-bold">AI</span> : <span className="text-[9px] text-emerald-600 font-bold">FREE</span>}
+                            {isMMS ? <span className="text-[9px] text-cyan-600 font-bold">AI</span> : isKLEA ? <span className="text-[9px] text-purple-600 font-bold">AI</span> : <span className="text-[9px] text-emerald-600 font-bold">FREE</span>}
                           </button>
                         );
                       })}

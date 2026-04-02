@@ -599,7 +599,8 @@ LANGUAGE_NAMES = {
 # Edge TTS voices per output language: {lang_code: {male: [voices], female: [voices]}}
 EDGE_TTS_VOICES = {
     "km": {"male": [{"id": "dara", "name": "Piseth (Boy)", "voice": "km-KH-PisethNeural"},
-                     {"id": "mms_khmer", "name": "Meta AI (Boy)", "voice": "mms-tts-khm", "provider": "mms"}],
+                     {"id": "mms_khmer", "name": "Meta AI (Boy)", "voice": "mms-tts-khm", "provider": "mms"},
+                     {"id": "klea_khmer", "name": "KLEA (Boy)", "voice": "klea-khm", "provider": "klea"}],
             "female": [{"id": "sophea", "name": "Sreymom (Girl)", "voice": "km-KH-SreymomNeural"}]},
     "th": {"male": [{"id": "th_m1", "name": "Niwat (Boy)", "voice": "th-TH-NiwatNeural"}],
             "female": [{"id": "th_f1", "name": "Premwadee (Girl)", "voice": "th-TH-PremwadeeNeural"}]},
@@ -655,6 +656,10 @@ def is_mms_voice(voice_id):
     """Check if a voice_id is a Meta MMS voice."""
     return voice_id and voice_id.startswith("mms_")
 
+def is_klea_voice(voice_id):
+    """Check if a voice_id is a KLEA voice."""
+    return voice_id and voice_id.startswith("klea_")
+
 # Meta MMS TTS model (lazy loaded)
 _mms_model = None
 _mms_tokenizer = None
@@ -684,6 +689,96 @@ def generate_mms_tts(text: str, output_path: str):
     audio = output.squeeze().cpu().numpy()
     sr = model.config.sampling_rate
     wavfile.write(output_path, rate=sr, data=audio)
+    return True
+
+# KLEA Khmer TTS model (lazy loaded, word-by-word)
+_klea_model = None
+_klea_hps = None
+
+def get_klea_model():
+    """Lazy load the KLEA Khmer word TTS model."""
+    global _klea_model, _klea_hps
+    if _klea_model is None:
+        import sys
+        # KLEA needs G_60000.pth in cwd
+        original_cwd = os.getcwd()
+        os.chdir("/root/.cache/klea")
+        
+        from klea.models import SynthesizerTrn
+        from klea import utils, commons
+        from importlib.resources import files
+        from pathlib import Path
+        
+        resource_path = files('klea').joinpath('config.json')
+        _klea_hps = utils.get_hparams_from_file(resource_path)
+        
+        _pad = '_'
+        _punctuation = '. '
+        _letters_ipa = 'acefhijklmnoprstuwzĕŋŏŭɑɓɔɗəɛɡɨɲʋʔʰː'
+        symbols = [_pad] + list(_punctuation) + list(_letters_ipa)
+        
+        _klea_model = SynthesizerTrn(
+            len(symbols),
+            _klea_hps.data.filter_length // 2 + 1,
+            _klea_hps.train.segment_size // _klea_hps.data.hop_length,
+            **_klea_hps.model
+        )
+        _klea_model.eval()
+        utils.load_checkpoint("G_60000.pth", _klea_model, None)
+        
+        os.chdir(original_cwd)
+        logger.info("KLEA Khmer word TTS model loaded!")
+    return _klea_model, _klea_hps
+
+def generate_klea_tts(text: str, output_path: str):
+    """Generate Khmer speech using KLEA (word by word, then concatenate)."""
+    import torch
+    import numpy as np
+    from scipy.io.wavfile import write as wav_write
+    from pydub import AudioSegment
+    from klea.khmer_phonemizer import phonemize_single
+    from klea import commons
+    
+    _pad = '_'
+    _punctuation = '. '
+    _letters_ipa = 'acefhijklmnoprstuwzĕŋŏŭɑɓɔɗəɛɡɨɲʋʔʰː'
+    symbols = [_pad] + list(_punctuation) + list(_letters_ipa)
+    _symbol_to_id = {s: i for i, s in enumerate(symbols)}
+    
+    def text_to_sequence(txt):
+        return [_symbol_to_id[s] for s in txt if s in _symbol_to_id]
+    
+    model, hps = get_klea_model()
+    
+    # Split sentence into words
+    words = text.strip().split()
+    if not words:
+        return False
+    
+    combined = AudioSegment.empty()
+    silence = AudioSegment.silent(duration=80)  # 80ms gap between words
+    
+    for word in words:
+        phonemes = " ".join(phonemize_single(word) + ["."])
+        text_norm = text_to_sequence(phonemes)
+        if hps.data.add_blank:
+            text_norm = commons.intersperse(text_norm, 0)
+        stn_tst = torch.LongTensor(text_norm)
+        
+        with torch.no_grad():
+            x_tst = stn_tst.unsqueeze(0)
+            x_tst_lengths = torch.LongTensor([stn_tst.size(0)])
+            audio = model.infer(x_tst, x_tst_lengths, noise_scale=0.667, noise_scale_w=0.8, length_scale=1)[0][0, 0].data.cpu().float().numpy()
+        
+        # Save word to temp file
+        word_path = output_path + f".word_{uuid.uuid4().hex[:6]}.wav"
+        wav_write(word_path, rate=hps.data.sampling_rate, data=audio)
+        word_audio = AudioSegment.from_file(word_path)
+        combined += word_audio + silence
+        try: os.unlink(word_path)
+        except: pass
+    
+    combined.export(output_path, format="wav")
     return True
 
 # Auth
@@ -1422,7 +1517,7 @@ async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int
         except Exception as e:
             logger.warning(f"Gemini TTS failed for segment {segment_idx}, falling back to Edge: {str(e)[:100]}")
 
-    # Fallback to Edge TTS or MMS TTS
+    # Fallback to Edge TTS or MMS TTS or KLEA TTS
     if audio_seg is None:
         voice_id = actor.get("voice") if actor else None
         tts_path = os.path.join(tempfile.gettempdir(), f"regen_{uuid.uuid4().hex}")
@@ -1431,6 +1526,10 @@ async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int
         if is_mms_voice(voice_id):
             tts_path += ".wav"
             generate_mms_tts(seg["translated"], tts_path)
+            audio_seg = AudioSegment.from_file(tts_path)
+        elif is_klea_voice(voice_id):
+            tts_path += ".wav"
+            generate_klea_tts(seg["translated"], tts_path)
             audio_seg = AudioSegment.from_file(tts_path)
         else:
             tts_path += ".mp3"
@@ -1703,7 +1802,7 @@ async def _generate_audio_sync(project_id, project, segments, speed, user, bg_vo
                             await asyncio.sleep(2)
                 logger.error(f"Gemini TTS failed, falling back to Edge TTS")
 
-            # Edge TTS or MMS TTS (default or fallback)
+            # Edge TTS or MMS TTS or KLEA TTS (default or fallback)
             voice_id = actor_ai_voice_map.get(speaker)
             
             if is_mms_voice(voice_id):
@@ -1718,6 +1817,22 @@ async def _generate_audio_sync(project_id, project, segments, speed, user, bg_vo
                     return (seg, audio_seg)
                 except Exception as e:
                     logger.warning(f"MMS TTS failed: {e}, falling back to Edge TTS")
+                    if os.path.exists(tts_path):
+                        try: os.unlink(tts_path)
+                        except: pass
+            
+            if is_klea_voice(voice_id):
+                # KLEA Khmer word-by-word TTS
+                tts_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.wav")
+                try:
+                    generate_klea_tts(seg["translated"], tts_path)
+                    audio_seg = AudioSegment.from_file(tts_path)
+                    os.unlink(tts_path)
+                    if seg_duration_ms > 0:
+                        audio_seg = fit_audio_to_duration(audio_seg, seg_duration_ms)
+                    return (seg, audio_seg)
+                except Exception as e:
+                    logger.warning(f"KLEA TTS failed: {e}, falling back to Edge TTS")
                     if os.path.exists(tts_path):
                         try: os.unlink(tts_path)
                         except: pass
