@@ -205,20 +205,33 @@ const Editor = () => {
             try {
               const status = await axios.get(`${API}/projects/${projectId}/queue-status`, { headers: { Authorization: `Bearer ${token}` } });
               setProgressInfo(status.data);
-              if (status.data?.status === "done" || status.data?.step === "done") break;
-              // Check if project status changed
-              const proj = await axios.get(`${API}/projects/${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
-              if (proj.data.status === "audio_ready" || proj.data.status === "error") {
+              if (status.data?.queue_status === "done" || status.data?.queue_status === "error") {
+                // Fetch final project state
+                const proj = await axios.get(`${API}/projects/${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
                 setProject(proj.data);
                 if (proj.data.segments) setSegments(proj.data.segments);
+                if (proj.data.actors) setActors(proj.data.actors);
                 if (proj.data.dubbed_audio_path) loadFile(proj.data.dubbed_audio_path, 'audio');
-                if (proj.data.status === "audio_ready") {
+                if (proj.data.status === "audio_ready" || proj.data.status === "completed") {
                   toast.success("Audio generated!");
                   sendNotification("VoxiDub", "Audio generation complete!");
                 } else {
                   toast.error("Audio generation failed");
                 }
                 break;
+              }
+              // Also check project status directly
+              if (i % 5 === 4) {
+                const proj = await axios.get(`${API}/projects/${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
+                if (proj.data.status === "audio_ready" || proj.data.status === "completed") {
+                  setProject(proj.data);
+                  if (proj.data.segments) setSegments(proj.data.segments);
+                  if (proj.data.actors) setActors(proj.data.actors);
+                  if (proj.data.dubbed_audio_path) loadFile(proj.data.dubbed_audio_path, 'audio');
+                  toast.success("Audio generated!");
+                  sendNotification("VoxiDub", "Audio generation complete!");
+                  break;
+                }
               }
             } catch (err) { console.warn("Poll error:", err.message); }
           }
@@ -231,7 +244,14 @@ const Editor = () => {
       if (r.data.dubbed_audio_path) loadFile(r.data.dubbed_audio_path, 'audio');
       toast.success("Audio generated!");
       sendNotification("VoxiDub", "Khmer audio generation complete!");
-    } catch { toast.error("Audio generation failed"); }
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.message || "";
+      if (msg.includes("timeout") || e.code === "ECONNABORTED") {
+        toast.info("Still processing... Check back in a minute.");
+      } else {
+        toast.error("Audio generation failed: " + msg);
+      }
+    }
     finally { setProcessingMsg(null); stopProgressPoll(); }
   };
 
