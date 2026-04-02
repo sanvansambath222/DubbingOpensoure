@@ -5,7 +5,7 @@ import axios from "axios";
 import { API } from "./constants";
 
 const EDGE_VOICES = {
-  km: { name: "Khmer", male: [{ id: "dara", name: "Piseth (Boy)", code: "km-KH-PisethNeural" }, { id: "mms_khmer", name: "Meta AI (Boy)", code: "mms-tts-khm" }, { id: "klea_khmer", name: "KLEA (Boy)", code: "klea-khm" }], female: [{ id: "sophea", name: "Sreymom (Girl)", code: "km-KH-SreymomNeural" }] },
+  km: { name: "Khmer", male: [{ id: "dara", name: "Piseth (Boy)", code: "km-KH-PisethNeural" }, { id: "mms_khmer", name: "Meta AI (Boy)", code: "mms-tts-khm" }], female: [{ id: "sophea", name: "Sreymom (Girl)", code: "km-KH-SreymomNeural" }] },
   th: { name: "Thai", male: [{ id: "th_m1", name: "Niwat (Boy)", code: "th-TH-NiwatNeural" }], female: [{ id: "th_f1", name: "Premwadee (Girl)", code: "th-TH-PremwadeeNeural" }] },
   vi: { name: "Vietnamese", male: [{ id: "vi_m1", name: "NamMinh (Boy)", code: "vi-VN-NamMinhNeural" }], female: [{ id: "vi_f1", name: "HoaiMy (Girl)", code: "vi-VN-HoaiMyNeural" }] },
   ko: { name: "Korean", male: [{ id: "ko_m1", name: "InJoon (Boy)", code: "ko-KR-InJoonNeural" }], female: [{ id: "ko_f1", name: "SunHi (Girl)", code: "ko-KR-SunHiNeural" }] },

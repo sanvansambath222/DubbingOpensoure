@@ -599,8 +599,7 @@ LANGUAGE_NAMES = {
 # Edge TTS voices per output language: {lang_code: {male: [voices], female: [voices]}}
 EDGE_TTS_VOICES = {
     "km": {"male": [{"id": "dara", "name": "Piseth (Boy)", "voice": "km-KH-PisethNeural"},
-                     {"id": "mms_khmer", "name": "Meta AI (Boy)", "voice": "mms-tts-khm", "provider": "mms"},
-                     {"id": "klea_khmer", "name": "KLEA (Boy)", "voice": "klea-khm", "provider": "klea"}],
+                     {"id": "mms_khmer", "name": "Meta AI (Boy)", "voice": "mms-tts-khm", "provider": "mms"}],
             "female": [{"id": "sophea", "name": "Sreymom (Girl)", "voice": "km-KH-SreymomNeural"}]},
     "th": {"male": [{"id": "th_m1", "name": "Niwat (Boy)", "voice": "th-TH-NiwatNeural"}],
             "female": [{"id": "th_f1", "name": "Premwadee (Girl)", "voice": "th-TH-PremwadeeNeural"}]},
