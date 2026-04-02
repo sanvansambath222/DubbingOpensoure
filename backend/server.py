@@ -311,16 +311,40 @@ def detect_speakers_audio(audio_path: str, segments: list) -> list:
             logger.warning(f"Embedding failed for segment {i}: {e}")
             embeddings.append(None)
         
-        # Pitch analysis for gender detection (zero-crossing rate)
+        # Pitch analysis for gender detection (autocorrelation F0)
         try:
-            samples_int = (chunk * 32768).astype(np.int16)
-            crossings = 0
-            for j in range(1, len(samples_int)):
-                if (samples_int[j] >= 0) != (samples_int[j-1] >= 0):
-                    crossings += 1
-            duration = len(samples_int) / sr
-            zcr = crossings / (2 * duration) if duration > 0 else 0
-            pitches.append(zcr)
+            # Downsample to 16kHz if needed
+            chunk_16k = chunk
+            frame_len = len(chunk_16k)
+            if frame_len < sr * 0.1:
+                pitches.append(None)
+                continue
+            # Autocorrelation to find fundamental frequency
+            # Search between 70Hz (male) and 300Hz (female)
+            min_lag = int(sr / 300)  # highest freq
+            max_lag = int(sr / 70)   # lowest freq
+            max_lag = min(max_lag, frame_len - 1)
+            if min_lag >= max_lag:
+                pitches.append(None)
+                continue
+            # Compute autocorrelation for lag range
+            best_lag = min_lag
+            best_corr = -1
+            chunk_norm = chunk_16k - np.mean(chunk_16k)
+            energy = np.sum(chunk_norm ** 2)
+            if energy < 1e-6:
+                pitches.append(None)
+                continue
+            for lag in range(min_lag, max_lag):
+                corr = np.sum(chunk_norm[:frame_len-lag] * chunk_norm[lag:]) / energy
+                if corr > best_corr:
+                    best_corr = corr
+                    best_lag = lag
+            if best_corr > 0.3:  # voiced speech threshold
+                f0 = sr / best_lag
+                pitches.append(f0)
+            else:
+                pitches.append(None)
         except:
             pitches.append(None)
 
