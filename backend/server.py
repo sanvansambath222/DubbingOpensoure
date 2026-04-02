@@ -412,6 +412,13 @@ AUTO_PROCESS_TIMEOUT_MS = 600000
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+
+def strip_oid(doc):
+    """Remove MongoDB _id from document before returning as JSON."""
+    if doc and isinstance(doc, dict):
+        doc.pop("_id", None)
+    return doc
+
 # Models
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -663,7 +670,7 @@ async def get_project(project_id: str, authorization: str = Header(None)):
 @api_router.patch("/projects/{project_id}")
 async def update_project(project_id: str, update: ProjectUpdate, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
@@ -674,7 +681,7 @@ async def update_project(project_id: str, update: ProjectUpdate, authorization: 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     # Delete stored files
@@ -762,7 +769,7 @@ class MergeRequest(BaseModel):
 @api_router.post("/projects/{project_id}/merge-segments")
 async def merge_segments(project_id: str, req: MergeRequest, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     segments = project.get("segments", [])
@@ -803,7 +810,7 @@ class SplitRequest(BaseModel):
 @api_router.post("/projects/{project_id}/split-segment")
 async def split_segment(project_id: str, req: SplitRequest, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     segments = project.get("segments", [])
@@ -838,7 +845,7 @@ async def split_segment(project_id: str, req: SplitRequest, authorization: str =
 @api_router.post("/projects/{project_id}/upload")
 async def upload_file(project_id: str, file: UploadFile = File(...), authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     file_type = get_file_type(file.filename)
@@ -862,7 +869,7 @@ async def upload_file(project_id: str, file: UploadFile = File(...), authorizati
 @api_router.post("/projects/{project_id}/upload-actor-voice")
 async def upload_actor_voice(project_id: str, file: UploadFile = File(...), actor_id: str = Form(""), authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     data = await file.read()
@@ -888,7 +895,7 @@ async def upload_actor_voice(project_id: str, file: UploadFile = File(...), acto
 @api_router.post("/projects/{project_id}/upload-segment-audio")
 async def upload_segment_audio(project_id: str, file: UploadFile = File(...), segment_id: int = 0, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     data = await file.read()
@@ -911,7 +918,7 @@ async def transcribe_segments(project_id: str, authorization: str = Header(None)
     from emergentintegrations.llm.chat import LlmChat, UserMessage
 
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if not project.get("original_file_path"):
@@ -1083,7 +1090,7 @@ Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male"
 async def translate_segments(project_id: str, target_language: str = Query("km"), authorization: str = Header(None)):
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     segments = project.get("segments", [])
@@ -1156,7 +1163,7 @@ class PreviewRequest(BaseModel):
 async def preview_tts(project_id: str, req: PreviewRequest, authorization: str = Header(None)):
     import edge_tts
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     target_lang = project.get("target_language", "km") if project else "km"
     
     voice = get_edge_voice(target_lang, req.gender)
@@ -1184,7 +1191,7 @@ async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int
     import edge_tts
 
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -1280,7 +1287,7 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), author
     from pydub import AudioSegment
 
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     segments = project.get("segments", [])
@@ -1578,7 +1585,7 @@ def save_youtube_voice_to_actor(project_id: str, audio_data: bytes, actors: list
 async def extract_youtube_voice(project_id: str, req: YoutubeExtractRequest, authorization: str = Header(None)):
     import yt_dlp
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -1658,7 +1665,7 @@ def assemble_dubbed_video(project: dict, burn_subs: bool) -> bytes:
 @api_router.post("/projects/{project_id}/generate-video")
 async def generate_video(project_id: str, burn_subtitles: bool = Query(False), authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if project.get("file_type") != "video":
@@ -1719,7 +1726,7 @@ async def quick_translate(request: TranslateRequest, authorization: str = Header
 @api_router.get("/projects/{project_id}/download-srt")
 async def download_srt(project_id: str, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     segments = project.get("segments", [])
@@ -1737,7 +1744,7 @@ async def download_srt(project_id: str, authorization: str = Header(None)):
 @api_router.get("/projects/{project_id}/download-mp3")
 async def download_mp3(project_id: str, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if not project.get("dubbed_audio_path"):
@@ -1770,7 +1777,7 @@ async def download_mp3(project_id: str, authorization: str = Header(None)):
 @api_router.post("/projects/{project_id}/share")
 async def create_share_link(project_id: str, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     share_token = project.get("share_token")
@@ -1786,7 +1793,7 @@ async def create_share_link(project_id: str, authorization: str = Header(None)):
 @api_router.delete("/projects/{project_id}/share")
 async def remove_share_link(project_id: str, authorization: str = Header(None)):
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     await db.projects.update_one(
@@ -1817,7 +1824,7 @@ async def get_shared_project(share_token: str):
 # Public file download (no auth, uses share token)
 @api_router.get("/shared/{share_token}/video")
 async def get_shared_video(share_token: str):
-    project = await db.projects.find_one({"share_token": share_token})
+    project = strip_oid(await db.projects.find_one({"share_token": share_token}))
     if not project or not project.get("dubbed_video_path"):
         raise HTTPException(status_code=404, detail="Not found")
     data, content_type = get_object(project["dubbed_video_path"])
@@ -1825,7 +1832,7 @@ async def get_shared_video(share_token: str):
 
 @api_router.get("/shared/{share_token}/audio")
 async def get_shared_audio(share_token: str):
-    project = await db.projects.find_one({"share_token": share_token})
+    project = strip_oid(await db.projects.find_one({"share_token": share_token}))
     if not project or not project.get("dubbed_audio_path"):
         raise HTTPException(status_code=404, detail="Not found")
     data, content_type = get_object(project["dubbed_audio_path"])
@@ -1833,7 +1840,7 @@ async def get_shared_audio(share_token: str):
 
 @api_router.get("/shared/{share_token}/srt")
 async def get_shared_srt(share_token: str):
-    project = await db.projects.find_one({"share_token": share_token})
+    project = strip_oid(await db.projects.find_one({"share_token": share_token}))
     if not project:
         raise HTTPException(status_code=404, detail="Not found")
     segments = project.get("segments", [])
@@ -2048,7 +2055,7 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
     from emergentintegrations.llm.chat import LlmChat, UserMessage
     
     user = await get_current_user(authorization)
-    project = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id})
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if not project.get("original_file_path"):
