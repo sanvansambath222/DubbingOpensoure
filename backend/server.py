@@ -341,6 +341,7 @@ def extract_background_audio(video_path: str) -> bytes:
 def mix_with_background(dubbed_audio: 'AudioSegment', bg_audio_bytes: bytes, bg_volume: int = -12) -> 'AudioSegment':
     """Mix dubbed TTS audio with background audio (original music/sfx).
     bg_volume: how much to reduce background volume in dB (negative = quieter)."""
+    import io
     from pydub import AudioSegment as AS
     try:
         bg = AS.from_file(io.BytesIO(bg_audio_bytes), format="wav")
