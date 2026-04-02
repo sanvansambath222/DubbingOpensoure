@@ -253,6 +253,167 @@ def apply_fallback_speakers(segments: list) -> list:
     return segments
 
 
+# --- SpeechBrain Audio-based Speaker Detection ---
+_speaker_classifier = None
+
+def get_speaker_classifier():
+    """Lazy load SpeechBrain ECAPA-TDNN speaker embedding model."""
+    global _speaker_classifier
+    if _speaker_classifier is None:
+        from speechbrain.inference.speaker import EncoderClassifier
+        _speaker_classifier = EncoderClassifier.from_hparams(
+            source="speechbrain/spkrec-ecapa-voxceleb",
+            savedir="/root/.cache/spkrec-ecapa"
+        )
+        logger.info("SpeechBrain ECAPA-TDNN speaker model loaded")
+    return _speaker_classifier
+
+def detect_speakers_audio(audio_path: str, segments: list) -> list:
+    """Detect speakers from audio using SpeechBrain embeddings + clustering.
+    Also detects gender using pitch analysis (F0)."""
+    import torch
+    import numpy as np
+    import wave
+    import struct
+    from sklearn.cluster import AgglomerativeClustering
+
+    classifier = get_speaker_classifier()
+    
+    # Read full audio
+    with wave.open(audio_path, 'r') as wf:
+        sr = wf.getframerate()
+        n_frames = wf.getnframes()
+        raw = wf.readframes(n_frames)
+        all_samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+    embeddings = []
+    valid_indices = []
+    pitches = []
+
+    for i, seg in enumerate(segments):
+        start_sample = int(seg["start"] * sr)
+        end_sample = int(seg["end"] * sr)
+        chunk = all_samples[start_sample:end_sample]
+        
+        # Skip very short segments (< 0.3s)
+        if len(chunk) < int(0.3 * sr):
+            embeddings.append(None)
+            pitches.append(None)
+            continue
+        
+        # Get speaker embedding
+        try:
+            audio_tensor = torch.tensor(chunk).unsqueeze(0)
+            emb = classifier.encode_batch(audio_tensor).squeeze().detach().numpy()
+            embeddings.append(emb)
+            valid_indices.append(i)
+        except Exception as e:
+            logger.warning(f"Embedding failed for segment {i}: {e}")
+            embeddings.append(None)
+        
+        # Pitch analysis for gender detection (zero-crossing rate)
+        try:
+            samples_int = (chunk * 32768).astype(np.int16)
+            crossings = 0
+            for j in range(1, len(samples_int)):
+                if (samples_int[j] >= 0) != (samples_int[j-1] >= 0):
+                    crossings += 1
+            duration = len(samples_int) / sr
+            zcr = crossings / (2 * duration) if duration > 0 else 0
+            pitches.append(zcr)
+        except:
+            pitches.append(None)
+
+    # Cluster valid embeddings
+    valid_embs = [embeddings[i] for i in valid_indices]
+    
+    if len(valid_embs) < 2:
+        # Only one segment or less, assign single speaker
+        for seg in segments:
+            seg["speaker"] = "SPEAKER_00"
+            seg["gender"] = "male"
+            seg["voice"] = "mms_khmer"
+        return segments
+
+    emb_matrix = np.array(valid_embs)
+    
+    # Determine number of clusters (max 6 speakers)
+    # Use distance threshold for automatic cluster count
+    try:
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=0.7,
+            metric="cosine",
+            linkage="average"
+        ).fit(emb_matrix)
+        labels = clustering.labels_
+        n_speakers = len(set(labels))
+        # Cap at 6 speakers
+        if n_speakers > 6:
+            clustering = AgglomerativeClustering(
+                n_clusters=6, metric="cosine", linkage="average"
+            ).fit(emb_matrix)
+            labels = clustering.labels_
+            n_speakers = 6
+    except Exception:
+        # Fallback: assume 2 speakers
+        clustering = AgglomerativeClustering(
+            n_clusters=2, metric="cosine", linkage="average"
+        ).fit(emb_matrix)
+        labels = clustering.labels_
+        n_speakers = 2
+
+    logger.info(f"SpeechBrain clustering: {n_speakers} speakers detected from {len(valid_embs)} segments")
+
+    # Map cluster labels to SPEAKER_XX
+    label_map = {}
+    next_id = 0
+    for label in labels:
+        if label not in label_map:
+            label_map[label] = f"SPEAKER_{str(next_id).zfill(2)}"
+            next_id += 1
+
+    # Assign speakers to valid segments
+    for idx_pos, seg_idx in enumerate(valid_indices):
+        speaker_label = label_map[labels[idx_pos]]
+        segments[seg_idx]["speaker"] = speaker_label
+
+    # Assign nearest speaker to invalid (short) segments
+    for i, seg in enumerate(segments):
+        if embeddings[i] is None and i not in valid_indices:
+            # Copy from nearest valid neighbor
+            for offset in [1, -1, 2, -2, 3, -3]:
+                neighbor = i + offset
+                if 0 <= neighbor < len(segments) and neighbor in valid_indices:
+                    segments[i]["speaker"] = segments[neighbor]["speaker"]
+                    break
+
+    # Gender detection per speaker using average pitch
+    speaker_pitches = {}
+    for i, seg in enumerate(segments):
+        spk = seg["speaker"]
+        if pitches[i] is not None:
+            if spk not in speaker_pitches:
+                speaker_pitches[spk] = []
+            speaker_pitches[spk].append(pitches[i])
+
+    speaker_gender = {}
+    for spk, plist in speaker_pitches.items():
+        avg_pitch = sum(plist) / len(plist)
+        # Male: ~85-170 Hz, Female: ~165-255 Hz
+        speaker_gender[spk] = "male" if avg_pitch < 160 else "female"
+        logger.info(f"{spk}: avg pitch={avg_pitch:.0f}Hz → {speaker_gender[spk]}")
+
+    # Apply gender and voice to all segments
+    for seg in segments:
+        gender = speaker_gender.get(seg["speaker"], "female")
+        seg["gender"] = gender
+        seg["voice"] = "mms_khmer" if gender == "male" else "sophea"
+
+    return segments
+
+
+
 # --- Extracted helpers for generate_audio_segments ---
 
 def get_media_duration_safe(project: dict) -> int:
@@ -1314,65 +1475,53 @@ async def transcribe_segments(project_id: str, authorization: str = Header(None)
                     "voice": "sophea"
                 })
 
-            # Step 2: Detect speakers using GPT (text-based)
+            # Step 2: Detect speakers using SpeechBrain audio analysis
             if segments:
-                detect_chat = LlmChat(
-                    api_key=EMERGENT_LLM_KEY,
-                    session_id=f"detect_{project_id}_{uuid.uuid4().hex[:6]}",
-                    system_message="""You analyze video dialogue to identify speakers, their GENDER and ROLE.
-
-CRITICAL GENDER RULES:
-- Characters with titles 爷/哥/先生/老板/少爷/大哥 = MALE
-- Characters with titles 姐/妹/女士/太太/老婆/小姐 = FEMALE  
-- 老子/我(aggressive) = MALE speaker
-- 弟弟 = MALE (younger brother)
-- 姐姐 = FEMALE (older sister)
-- 九爷 = MALE, 少爷 = MALE
-- Aggressive/commanding speech (滚/找死/给我滚/狗东西) = usually MALE
-- Most drama conversations have BOTH male AND female characters
-- If unsure about gender, look at HOW they speak: commanding/rough = male, gentle/polite = could be either
-
-SPEAKER GROUPING:
-- Use SPEAKER_00, SPEAKER_01, SPEAKER_02 etc.
-- Different conversation turns = different speakers  
-- Same person consecutive lines = same ID
-- When someone is ADDRESSED by title, the REPLY is a different person
+                try:
+                    segments = await asyncio.get_event_loop().run_in_executor(
+                        None, lambda: detect_speakers_audio(audio_path, segments)
+                    )
+                    unique_speakers = set(s["speaker"] for s in segments)
+                    logger.info(f"SpeechBrain detected {len(unique_speakers)} unique speakers: {unique_speakers}")
+                except Exception as e:
+                    logger.warning(f"SpeechBrain speaker detection failed, using fallback: {e}")
+                    segments = apply_fallback_speakers(segments)
+                
+                # Step 2b: Use GPT to detect ROLES only (Boss, Wife, etc.)
+                try:
+                    detect_chat = LlmChat(
+                        api_key=EMERGENT_LLM_KEY,
+                        session_id=f"roles_{project_id}_{uuid.uuid4().hex[:6]}",
+                        system_message="""You analyze dialogue to identify character ROLES only. Speakers and genders are already detected from audio.
 
 ROLE DETECTION:
 - Identify the character's role: Narrator, Boss, Wife, Doctor, Student, etc.
 - If character has a proper name (e.g. 杜清禾), translate or romanize it to English (e.g. "Du Qinghe")
 - ALL role names MUST be in English.
 
-IMPORTANT: You MUST identify at least some speakers as "male" if the dialogue contains male characters.
-
 Return ONLY JSON array:
-[{"idx": 0, "speaker": "SPEAKER_00", "gender": "male", "role": "Boss"}, ...]
-Include ALL indices 0 to """ + str(len(segments)-1) + """. gender must be "male" or "female". role MUST be in English."""
-                )
-                detect_chat.with_model("openai", "gpt-5.2")
-                
-                # Send full dialogue with line numbers
-                dialogue_lines = []
-                for i, s in enumerate(segments):
-                    dialogue_lines.append(f"Line {i}: \"{s['original']}\"")
-                all_text = "\n".join(dialogue_lines)
-                
-                try:
-                    result_text = await detect_chat.send_message(UserMessage(text=f"Identify speaker and gender for each line:\n\n{all_text}"))
-                    logger.info(f"GPT detection result: {result_text[:500]}")
+[{"idx": 0, "role": "Boss"}, {"idx": 1, "role": "Wife"}, ...]
+Include ALL indices 0 to """ + str(len(segments)-1) + """. role MUST be in English."""
+                    )
+                    detect_chat.with_model("openai", "gpt-5.2")
                     
+                    dialogue_lines = []
+                    for i, s in enumerate(segments):
+                        dialogue_lines.append(f"Line {i} ({s['speaker']}, {s['gender']}): \"{s['original']}\"")
+                    all_text = "\n".join(dialogue_lines)
+                    
+                    result_text = await detect_chat.send_message(UserMessage(text=f"Identify roles for each line:\n\n{all_text}"))
                     if "[" in result_text:
                         start_idx = result_text.index("[")
                         end_idx = result_text.rindex("]") + 1
-                        detections = json.loads(result_text[start_idx:end_idx])
-                        segments = apply_speaker_detections(segments, detections)
-                        
-                        unique_speakers = set(s["speaker"] for s in segments)
-                        logger.info(f"Detected {len(unique_speakers)} unique speakers: {unique_speakers}")
-                        
+                        roles = json.loads(result_text[start_idx:end_idx])
+                        for r in roles:
+                            idx = r.get("idx", -1)
+                            if 0 <= idx < len(segments) and r.get("role"):
+                                segments[idx]["role"] = r["role"]
+                        logger.info(f"GPT role detection complete")
                 except Exception as e:
-                    logger.warning(f"Speaker detection failed, using fallback: {e}")
-                    segments = apply_fallback_speakers(segments)
+                    logger.warning(f"GPT role detection failed (non-critical): {e}")
 
             actors = build_actors_from_segments(segments)
 
