@@ -219,7 +219,7 @@ def build_actors_from_segments(segments: list) -> list:
         label = f"{role} ({gender_tag})" if role else gender_tag
         actors.append({
             "id": spk, "label": label, "gender": info["gender"],
-            "role": role, "voice": "mms_khmer" if info["gender"] == "male" else "sophea",
+            "role": role, "voice": "mms_khmer" if info["gender"] == "male" else "mms_khmer_f",
             "custom_voice": None, "total_speaking_time": round(info["total_time"], 1),
             "line_count": info["line_count"],
             "first_start": round(info["first_start"], 1),
@@ -600,7 +600,8 @@ LANGUAGE_NAMES = {
 EDGE_TTS_VOICES = {
     "km": {"male": [{"id": "dara", "name": "Piseth (Boy)", "voice": "km-KH-PisethNeural"},
                      {"id": "mms_khmer", "name": "Meta AI (Boy)", "voice": "mms-tts-khm", "provider": "mms"}],
-            "female": [{"id": "sophea", "name": "Sreymom (Girl)", "voice": "km-KH-SreymomNeural"}]},
+            "female": [{"id": "sophea", "name": "Sreymom (Girl)", "voice": "km-KH-SreymomNeural"},
+                       {"id": "mms_khmer_f", "name": "Meta AI (Girl)", "voice": "mms-tts-khm-f", "provider": "mms"}]},
     "th": {"male": [{"id": "th_m1", "name": "Niwat (Boy)", "voice": "th-TH-NiwatNeural"}],
             "female": [{"id": "th_f1", "name": "Premwadee (Girl)", "voice": "th-TH-PremwadeeNeural"}]},
     "vi": {"male": [{"id": "vi_m1", "name": "NamMinh (Boy)", "voice": "vi-VN-NamMinhNeural"}],
@@ -657,7 +658,11 @@ def get_edge_voice(lang_code, gender, voice_id=None):
 
 def is_mms_voice(voice_id):
     """Check if a voice_id is a Meta MMS voice."""
-    return voice_id and voice_id.startswith("mms_")
+    return voice_id and (voice_id.startswith("mms_"))
+
+def is_mms_female(voice_id):
+    """Check if a voice_id is the MMS female variant."""
+    return voice_id == "mms_khmer_f"
 
 def is_klea_voice(voice_id):
     """Check if a voice_id is a KLEA voice."""
@@ -679,8 +684,8 @@ def get_mms_model():
         logger.info("Meta MMS Khmer model loaded!")
     return _mms_model, _mms_tokenizer
 
-def generate_mms_tts(text: str, output_path: str, speed: float = 1.0):
-    """Generate Khmer speech using Meta MMS TTS. Speed: 0.5=slow, 1.0=normal, 2.0=fast. Returns True on success."""
+def generate_mms_tts(text: str, output_path: str, speed: float = 1.0, female: bool = False):
+    """Generate Khmer speech using Meta MMS TTS. Speed: 0.5=slow, 1.0=normal, 2.0=fast. female=True raises pitch. Returns True on success."""
     import torch
     import numpy as np
     import scipy.io.wavfile as wavfile
@@ -694,14 +699,27 @@ def generate_mms_tts(text: str, output_path: str, speed: float = 1.0):
     audio = output.squeeze().cpu().numpy()
     sr = model.config.sampling_rate
     
-    # Apply speed by changing sample rate then converting back
+    # Build ffmpeg filter chain
+    filters = []
+    
+    # Female pitch shift: raise pitch 30%
+    if female:
+        filters.append(f"asetrate={sr}*1.3")
+        filters.append("atempo=0.769")  # 1/1.3 to keep same duration
+    
+    # Speed adjustment
     if speed != 1.0 and speed > 0:
-        # Faster speed = higher sample rate input, then resample to original
-        new_sr = int(sr * max(0.5, min(3.0, speed)))
+        sp = max(0.5, min(3.0, speed))
+        filters.append(f"atempo={sp}")
+    
+    # Always resample to original sr at the end
+    filters.append(f"aresample={sr}")
+    
+    if filters:
         temp_path = output_path + ".tmp.wav"
-        wavfile.write(temp_path, rate=new_sr, data=audio)
-        # Convert back to original sample rate
-        cmd = ["ffmpeg", "-y", "-i", temp_path, "-ar", str(sr), "-ac", "1", output_path]
+        wavfile.write(temp_path, rate=sr, data=audio)
+        filter_str = ",".join(filters)
+        cmd = ["ffmpeg", "-y", "-i", temp_path, "-af", filter_str, output_path]
         subprocess.run(cmd, capture_output=True, text=True)
         try: os.unlink(temp_path)
         except: pass
@@ -1544,7 +1562,7 @@ async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int
         if is_mms_voice(voice_id):
             tts_path += ".wav"
             mms_speed = seg_speed + (speed / 100.0)
-            generate_mms_tts(seg["translated"], tts_path, speed=max(0.5, mms_speed))
+            generate_mms_tts(seg["translated"], tts_path, speed=max(0.5, mms_speed), female=is_mms_female(voice_id))
             audio_seg = AudioSegment.from_file(tts_path)
         elif is_klea_voice(voice_id):
             tts_path += ".wav"
@@ -1829,7 +1847,7 @@ async def _generate_audio_sync(project_id, project, segments, speed, user, bg_vo
                 tts_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.wav")
                 try:
                     mms_speed = seg_speed + (speed / 100.0)
-                    generate_mms_tts(seg["translated"], tts_path, speed=max(0.5, mms_speed))
+                    generate_mms_tts(seg["translated"], tts_path, speed=max(0.5, mms_speed), female=is_mms_female(voice_id))
                     audio_seg = AudioSegment.from_file(tts_path)
                     os.unlink(tts_path)
                     if seg_duration_ms > 0:
