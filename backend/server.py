@@ -1339,6 +1339,48 @@ async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int
     return StreamingResponse(buf, media_type="audio/mpeg", headers={"Content-Disposition": f"inline; filename={audio_filename}"})
 
 
+@api_router.post("/projects/{project_id}/extract-background")
+async def extract_background_endpoint(project_id: str, authorization: str = Header(None)):
+    """Extract background audio (remove human voice, keep music/sfx) using Demucs AI."""
+    user = await get_current_user(authorization)
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.get("file_type") != "video" or not project.get("original_file_path"):
+        raise HTTPException(status_code=400, detail="No video file found")
+
+    # Get video file
+    video_data, _ = get_object(project["original_file_path"])
+    ext = project.get("original_filename", "video.mp4").split(".")[-1]
+    tmp_video = os.path.join(tempfile.gettempdir(), f"extract_{uuid.uuid4().hex}.{ext}")
+    with open(tmp_video, "wb") as f:
+        f.write(video_data)
+
+    bg_bytes = extract_background_audio(tmp_video)
+    os.unlink(tmp_video)
+
+    if not bg_bytes:
+        raise HTTPException(status_code=500, detail="Failed to extract background audio")
+
+    # Save and return
+    bg_filename = f"bg_audio_{project_id}_{uuid.uuid4().hex[:6]}.wav"
+    bg_path = os.path.join(str(LOCAL_STORAGE_DIR), bg_filename)
+    with open(bg_path, "wb") as f:
+        f.write(bg_bytes)
+
+    # Save path to project
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"bg_audio_path": bg_filename, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    return StreamingResponse(
+        io.BytesIO(bg_bytes),
+        media_type="audio/wav",
+        headers={"Content-Disposition": f"attachment; filename={bg_filename}"}
+    )
+
+
 @api_router.post("/projects/{project_id}/generate-audio-segments")
 async def generate_audio_segments(project_id: str, speed: int = Query(2), bg_volume: int = Query(0), authorization: str = Header(None)):
     import time

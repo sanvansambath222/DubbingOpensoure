@@ -38,6 +38,8 @@ const Editor = () => {
   const [videoUrl, setVideoUrl] = useState(null);
   const [burnSubs, setBurnSubs] = useState(false);
   const [bgVolume, setBgVolume] = useState(100);
+  const [extractingBg, setExtractingBg] = useState(false);
+  const [bgAudioUrl, setBgAudioUrl] = useState(null);
   const [ttsSpeed, setTtsSpeed] = useState(2);
   const [previewingIdx, setPreviewingIdx] = useState(null);
   const [originalVideoUrl, setOriginalVideoUrl] = useState(null);
@@ -140,6 +142,21 @@ const Editor = () => {
       sendNotification("VoxiDub", `Translation to ${langName} complete!`);
     } catch { toast.error("Translation failed"); }
     finally { setProcessingMsg(null); stopProgressPoll(); }
+  };
+
+  const extractBackground = async () => {
+    setExtractingBg(true);
+    try {
+      const r = await axios.post(`${API}/projects/${projectId}/extract-background`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob',
+        timeout: 600000,
+      });
+      const url = URL.createObjectURL(r.data);
+      setBgAudioUrl(url);
+      toast.success("Background audio extracted! Voice removed.");
+    } catch (e) { toast.error(e.response?.data?.detail || "Extraction failed"); }
+    finally { setExtractingBg(false); }
   };
 
   const generateAudio = async () => {
