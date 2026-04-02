@@ -679,19 +679,34 @@ def get_mms_model():
         logger.info("Meta MMS Khmer model loaded!")
     return _mms_model, _mms_tokenizer
 
-def generate_mms_tts(text: str, output_path: str):
-    """Generate Khmer speech using Meta MMS TTS. Returns True on success."""
+def generate_mms_tts(text: str, output_path: str, speed: float = 1.0):
+    """Generate Khmer speech using Meta MMS TTS. Speed: 0.5=slow, 1.0=normal, 2.0=fast. Returns True on success."""
     import torch
     import numpy as np
     import scipy.io.wavfile as wavfile
     
     model, tokenizer = get_mms_model()
     inputs = tokenizer(text, return_tensors="pt")
+    
     with torch.no_grad():
         output = model(**inputs).waveform
+    
     audio = output.squeeze().cpu().numpy()
     sr = model.config.sampling_rate
-    wavfile.write(output_path, rate=sr, data=audio)
+    
+    # Apply speed by changing sample rate then converting back
+    if speed != 1.0 and speed > 0:
+        # Faster speed = higher sample rate input, then resample to original
+        new_sr = int(sr * max(0.5, min(3.0, speed)))
+        temp_path = output_path + ".tmp.wav"
+        wavfile.write(temp_path, rate=new_sr, data=audio)
+        # Convert back to original sample rate
+        cmd = ["ffmpeg", "-y", "-i", temp_path, "-ar", str(sr), "-ac", "1", output_path]
+        subprocess.run(cmd, capture_output=True, text=True)
+        try: os.unlink(temp_path)
+        except: pass
+    else:
+        wavfile.write(output_path, rate=sr, data=audio)
     return True
 
 # KLEA Khmer TTS model (lazy loaded, word-by-word)
@@ -1528,7 +1543,8 @@ async def regenerate_segment_audio(project_id: str, segment_idx: int, speed: int
         
         if is_mms_voice(voice_id):
             tts_path += ".wav"
-            generate_mms_tts(seg["translated"], tts_path)
+            mms_speed = seg_speed + (speed / 100.0)
+            generate_mms_tts(seg["translated"], tts_path, speed=max(0.5, mms_speed))
             audio_seg = AudioSegment.from_file(tts_path)
         elif is_klea_voice(voice_id):
             tts_path += ".wav"
@@ -1812,7 +1828,8 @@ async def _generate_audio_sync(project_id, project, segments, speed, user, bg_vo
                 # Meta MMS Khmer TTS
                 tts_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.wav")
                 try:
-                    generate_mms_tts(seg["translated"], tts_path)
+                    mms_speed = seg_speed + (speed / 100.0)
+                    generate_mms_tts(seg["translated"], tts_path, speed=max(0.5, mms_speed))
                     audio_seg = AudioSegment.from_file(tts_path)
                     os.unlink(tts_path)
                     if seg_duration_ms > 0:
