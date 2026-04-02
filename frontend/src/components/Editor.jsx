@@ -37,7 +37,7 @@ const Editor = () => {
   const [audioUrl, setAudioUrl] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
   const [burnSubs, setBurnSubs] = useState(false);
-  const [bgVolume, setBgVolume] = useState(0);
+  const [bgVolume, setBgVolume] = useState(100);
   const [ttsSpeed, setTtsSpeed] = useState(2);
   const [previewingIdx, setPreviewingIdx] = useState(null);
   const [originalVideoUrl, setOriginalVideoUrl] = useState(null);

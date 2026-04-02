@@ -318,12 +318,14 @@ def mix_audio_timeline(segment_audio_pairs: list, segments: list, total_duration
 
 
 def extract_background_audio(video_path: str) -> bytes:
-    """Extract audio from video, remove human voice, keep only background music/sfx."""
-    # Step 1: Extract full audio
+    """Extract audio from video, use Demucs AI to remove human voice, keep only background music/sfx."""
+    import tempfile as _tf
+    
+    # Step 1: Extract audio from video
     full_audio = video_path + ".full_audio.wav"
     cmd1 = [
         "ffmpeg", "-y", "-i", video_path,
-        "-vn", "-acodec", "pcm_s16le", "-ar", "24000", "-ac", "2",
+        "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2",
         full_audio
     ]
     r1 = subprocess.run(cmd1, capture_output=True, text=True)
@@ -331,36 +333,65 @@ def extract_background_audio(video_path: str) -> bytes:
         logger.warning(f"Failed to extract audio: {r1.stderr[:200]}")
         return None
 
-    # Step 2: Remove vocals (phase inversion - removes center-panned voice, keeps music)
-    bg_audio = video_path + ".bg_audio.wav"
-    cmd2 = [
-        "ffmpeg", "-y", "-i", full_audio,
-        "-af", "pan=stereo|c0=c0-c1|c1=c1-c0",
-        "-ar", "24000", "-ac", "1",
-        bg_audio
-    ]
-    r2 = subprocess.run(cmd2, capture_output=True, text=True)
-    
-    # Clean up full audio
+    # Step 2: Use Demucs AI to separate vocals from music
+    output_dir = _tf.mkdtemp(prefix="demucs_")
     try:
-        os.unlink(full_audio)
-    except Exception:
-        pass
-
-    if r2.returncode != 0:
-        logger.warning(f"Vocal removal failed, using full audio: {r2.stderr[:200]}")
-        # Fallback: just use full audio without vocal removal
-        cmd_fallback = [
-            "ffmpeg", "-y", "-i", video_path,
-            "-vn", "-acodec", "pcm_s16le", "-ar", "24000", "-ac", "1",
-            bg_audio
+        cmd2 = [
+            "python3", "-m", "demucs",
+            "--two-stems=vocals",
+            "-n", "htdemucs",
+            "--device", "cpu",
+            "-o", output_dir,
+            full_audio
         ]
-        subprocess.run(cmd_fallback, capture_output=True, text=True)
-
+        logger.info("Running Demucs AI vocal separation...")
+        r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=600)
+        
+        if r2.returncode == 0:
+            # Find the no_vocals file
+            song_name = os.path.splitext(os.path.basename(full_audio))[0]
+            no_vocals_path = os.path.join(output_dir, "htdemucs", song_name, "no_vocals.wav")
+            
+            if os.path.exists(no_vocals_path):
+                # Convert to mono 24000hz for mixing
+                bg_audio = video_path + ".bg_audio.wav"
+                cmd3 = ["ffmpeg", "-y", "-i", no_vocals_path, "-ar", "24000", "-ac", "1", bg_audio]
+                subprocess.run(cmd3, capture_output=True, text=True)
+                
+                with open(bg_audio, "rb") as f:
+                    data = f.read()
+                os.unlink(bg_audio)
+                logger.info("Demucs vocal separation successful!")
+                return data
+            else:
+                logger.warning(f"Demucs output not found: {no_vocals_path}")
+        else:
+            logger.warning(f"Demucs failed: {r2.stderr[:200]}")
+    except subprocess.TimeoutExpired:
+        logger.warning("Demucs timed out (>10min)")
+    except Exception as e:
+        logger.warning(f"Demucs error: {e}")
+    finally:
+        # Cleanup
+        try:
+            os.unlink(full_audio)
+        except Exception:
+            pass
+        import shutil
+        try:
+            shutil.rmtree(output_dir, ignore_errors=True)
+        except Exception:
+            pass
+    
+    # Fallback: return full audio (with voice) if Demucs fails
+    logger.warning("Demucs failed, falling back to full audio")
+    fallback = video_path + ".bg_fallback.wav"
+    cmd_fb = ["ffmpeg", "-y", "-i", video_path, "-vn", "-ar", "24000", "-ac", "1", fallback]
+    subprocess.run(cmd_fb, capture_output=True, text=True)
     try:
-        with open(bg_audio, "rb") as f:
+        with open(fallback, "rb") as f:
             data = f.read()
-        os.unlink(bg_audio)
+        os.unlink(fallback)
         return data
     except Exception:
         return None
