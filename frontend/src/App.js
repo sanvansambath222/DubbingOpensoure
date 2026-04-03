@@ -6,6 +6,7 @@ import LandingPage from "./components/LandingPage";
 import Dashboard from "./components/Dashboard";
 import Editor from "./components/Editor";
 import SharedProject from "./components/SharedProject";
+import ToolsPage from "./components/ToolsPage";
 
 function AppRouter() {
   const location = useLocation();
@@ -24,6 +25,11 @@ function AppRouter() {
       <Route path="/editor/:projectId" element={
         <ProtectedRoute>
           <Editor />
+        </ProtectedRoute>
+      } />
+      <Route path="/tools" element={
+        <ProtectedRoute>
+          <ToolsPage />
         </ProtectedRoute>
       } />
       <Route path="/shared/:shareToken" element={<SharedProject />} />

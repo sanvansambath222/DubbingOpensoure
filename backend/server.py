@@ -2712,6 +2712,234 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
     asyncio.create_task(_auto_process_background())
     return {"status": "processing", "message": "Auto-processing started. Detecting speakers, translating, generating audio..."}
 
+# ============================================================
+# TOOLS API ENDPOINTS (standalone video/audio tools)
+# ============================================================
+
+TOOLS_OUTPUT_DIR = LOCAL_STORAGE_DIR / "tools_output"
+TOOLS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# 1. Add Subtitles
+@api_router.post("/tools/add-subtitles")
+async def tool_add_subtitles(video: UploadFile = File(...), srt: UploadFile = File(...),
+    font_size: int = Form(24), font_color: str = Form("white"), position: str = Form("bottom"),
+    authorization: str = Header(None)):
+    await get_current_user(authorization)
+    with tempfile.TemporaryDirectory() as tmp:
+        vid_path = os.path.join(tmp, f"input_{video.filename}")
+        srt_path = os.path.join(tmp, f"subs.srt")
+        out_name = f"subtitled_{uuid.uuid4().hex[:8]}.mp4"
+        out_path = str(TOOLS_OUTPUT_DIR / out_name)
+        with open(vid_path, "wb") as f: f.write(await video.read())
+        with open(srt_path, "wb") as f: f.write(await srt.read())
+        y_pos = "10" if position == "top" else "(h-text_h)/2" if position == "center" else "h-th-20"
+        style = f"FontSize={font_size},PrimaryColour=&H00{'FFFFFF' if font_color=='white' else 'FFFF00' if font_color=='yellow' else '00FF00' if font_color=='green' else '00FFFF'}&"
+        cmd = ["ffmpeg", "-y", "-i", vid_path, "-vf", f"subtitles={srt_path}:force_style='{style}'", "-c:a", "copy", out_path]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
+    return {"download_url": f"/api/tools/download/{out_name}"}
+
+# 2. Translate SRT
+@api_router.post("/tools/translate-srt")
+async def tool_translate_srt(srt: UploadFile = File(...), target_language: str = Form("km"), authorization: str = Header(None)):
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    await get_current_user(authorization)
+    content = (await srt.read()).decode("utf-8", errors="replace")
+    # Parse SRT lines
+    lines = content.strip().split("\n")
+    text_lines = [l for l in lines if l.strip() and not l.strip().isdigit() and "-->" not in l]
+    if not text_lines:
+        raise HTTPException(status_code=400, detail="No text found in SRT")
+    target_name = LANGUAGE_NAMES.get(target_language, target_language)
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"srt_{uuid.uuid4().hex[:6]}",
+        system_message=f"Translate the following subtitles to {target_name}. Keep the same number of lines. Return ONLY the translated lines, one per line.")
+    chat.with_model("openai", "gpt-5.2")
+    result = await chat.send_message(UserMessage(text="\n".join(text_lines)))
+    translated_lines = result.strip().split("\n")
+    # Rebuild SRT with translated lines
+    output_lines = []
+    text_idx = 0
+    for l in lines:
+        if l.strip() and not l.strip().isdigit() and "-->" not in l and text_idx < len(translated_lines):
+            output_lines.append(translated_lines[text_idx])
+            text_idx += 1
+        else:
+            output_lines.append(l)
+    out_name = f"translated_{uuid.uuid4().hex[:8]}.srt"
+    out_path = str(TOOLS_OUTPUT_DIR / out_name)
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(output_lines))
+    return {"download_url": f"/api/tools/download/{out_name}"}
+
+# 2b. Translate Text
+class TranslateTextReq(BaseModel):
+    text: str
+    target_language: str = "km"
+
+@api_router.post("/tools/translate-text")
+async def tool_translate_text(req: TranslateTextReq, authorization: str = Header(None)):
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    await get_current_user(authorization)
+    target_name = LANGUAGE_NAMES.get(req.target_language, req.target_language)
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"txt_{uuid.uuid4().hex[:6]}",
+        system_message=f"Translate the text to {target_name}. Return ONLY the translation, nothing else.")
+    chat.with_model("openai", "gpt-5.2")
+    result = await chat.send_message(UserMessage(text=req.text))
+    return {"translated": result.strip()}
+
+# 3. Trim Video
+@api_router.post("/tools/trim-video")
+async def tool_trim_video(video: UploadFile = File(...), start_time: str = Form("00:00:00"), end_time: str = Form("00:00:30"),
+    authorization: str = Header(None)):
+    await get_current_user(authorization)
+    with tempfile.TemporaryDirectory() as tmp:
+        vid_path = os.path.join(tmp, f"input_{video.filename}")
+        ext = video.filename.split(".")[-1] if "." in video.filename else "mp4"
+        out_name = f"trimmed_{uuid.uuid4().hex[:8]}.{ext}"
+        out_path = str(TOOLS_OUTPUT_DIR / out_name)
+        with open(vid_path, "wb") as f: f.write(await video.read())
+        cmd = ["ffmpeg", "-y", "-i", vid_path, "-ss", start_time, "-to", end_time, "-c", "copy", out_path]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
+    return {"download_url": f"/api/tools/download/{out_name}"}
+
+# 4. AI Clips
+@api_router.post("/tools/ai-clips")
+async def tool_ai_clips(video: UploadFile = File(...), clip_count: int = Form(3), clip_duration: int = Form(30),
+    authorization: str = Header(None)):
+    from emergentintegrations.llm.openai import OpenAISpeechToText
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    await get_current_user(authorization)
+    with tempfile.TemporaryDirectory() as tmp:
+        vid_path = os.path.join(tmp, f"input_{video.filename}")
+        audio_path = os.path.join(tmp, "audio.wav")
+        with open(vid_path, "wb") as f: f.write(await video.read())
+        # Get duration
+        duration = get_media_duration(vid_path)
+        if duration < clip_duration:
+            raise HTTPException(status_code=400, detail=f"Video too short ({duration:.0f}s) for {clip_duration}s clips")
+        # Extract audio for transcription
+        subprocess.run(["ffmpeg", "-y", "-i", vid_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path], capture_output=True)
+        # Transcribe
+        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+        with open(audio_path, "rb") as af:
+            response = await stt.transcribe(file=af, model="whisper-1", response_format="verbose_json")
+        segments = response.segments if hasattr(response, 'segments') else []
+        # Ask GPT to pick best moments
+        seg_text = "\n".join([f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in segments])
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"clips_{uuid.uuid4().hex[:6]}",
+            system_message=f"""Pick the {clip_count} most interesting/engaging moments from this video transcript.
+Each clip should be about {clip_duration} seconds long. Video is {duration:.0f}s total.
+Return ONLY a JSON array: [{{"start": 10.0, "end": 40.0, "reason": "..."}}]""")
+        chat.with_model("openai", "gpt-5.2")
+        result = await chat.send_message(UserMessage(text=seg_text))
+        clips_data = []
+        try:
+            start_i = result.index("[")
+            end_i = result.rindex("]") + 1
+            clips_data = json.loads(result[start_i:end_i])
+        except:
+            # Fallback: evenly spaced clips
+            step = duration / (clip_count + 1)
+            clips_data = [{"start": round(step * (i+1) - clip_duration/2, 1), "end": round(step * (i+1) + clip_duration/2, 1)} for i in range(clip_count)]
+        # Cut clips
+        output_clips = []
+        for i, c in enumerate(clips_data[:clip_count]):
+            clip_name = f"clip_{uuid.uuid4().hex[:8]}_{i+1}.mp4"
+            clip_path = str(TOOLS_OUTPUT_DIR / clip_name)
+            start = max(0, float(c.get("start", 0)))
+            end = min(duration, float(c.get("end", start + clip_duration)))
+            cmd = ["ffmpeg", "-y", "-i", vid_path, "-ss", str(start), "-to", str(end), "-c", "copy", clip_path]
+            subprocess.run(cmd, capture_output=True)
+            output_clips.append({"url": f"/api/tools/download/{clip_name}", "start": round(start, 1), "end": round(end, 1)})
+    return {"clips": output_clips}
+
+# 5. Text to Speech
+class TTSReq(BaseModel):
+    text: str
+    voice: str = "mms_khmer"
+    speed: int = 0
+
+@api_router.post("/tools/text-to-speech")
+async def tool_text_to_speech(req: TTSReq, authorization: str = Header(None)):
+    await get_current_user(authorization)
+    out_path = os.path.join(tempfile.gettempdir(), f"tts_{uuid.uuid4().hex}.wav")
+    voice_id = req.voice
+    if is_mms_voice(voice_id):
+        mms_speed = (1.0 + req.speed / 100.0) * 0.9
+        generate_mms_tts(req.text, out_path, speed=max(0.5, mms_speed), female=is_mms_female(voice_id))
+    else:
+        # Edge TTS
+        import edge_tts
+        edge_map = {
+            "sophea": "km-KH-SreymomNeural", "dara": "km-KH-PisethNeural",
+            "en_m1": "en-US-GuyNeural", "en_f1": "en-US-JennyNeural",
+            "zh_m1": "zh-CN-YunxiNeural", "zh_f1": "zh-CN-XiaoxiaoNeural",
+            "th_m1": "th-TH-NiwatNeural", "th_f1": "th-TH-PremwadeeNeural",
+        }
+        edge_voice = edge_map.get(voice_id, "km-KH-SreymomNeural")
+        rate = f"+{req.speed}%" if req.speed >= 0 else f"{req.speed}%"
+        out_mp3 = out_path.replace(".wav", ".mp3")
+        communicate = edge_tts.Communicate(req.text, voice=edge_voice, rate=rate)
+        await communicate.save(out_mp3)
+        out_path = out_mp3
+    with open(out_path, "rb") as f:
+        data = f.read()
+    os.unlink(out_path)
+    media = "audio/wav" if out_path.endswith(".wav") else "audio/mpeg"
+    return Response(content=data, media_type=media)
+
+# 6. Resize Video
+@api_router.post("/tools/resize-video")
+async def tool_resize_video(video: UploadFile = File(...), resolution: str = Form("1920:1080"),
+    authorization: str = Header(None)):
+    await get_current_user(authorization)
+    with tempfile.TemporaryDirectory() as tmp:
+        vid_path = os.path.join(tmp, f"input_{video.filename}")
+        out_name = f"resized_{uuid.uuid4().hex[:8]}.mp4"
+        out_path = str(TOOLS_OUTPUT_DIR / out_name)
+        with open(vid_path, "wb") as f: f.write(await video.read())
+        cmd = ["ffmpeg", "-y", "-i", vid_path, "-vf", f"scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2", "-c:a", "copy", out_path]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
+    return {"download_url": f"/api/tools/download/{out_name}"}
+
+# 7. Convert Video
+@api_router.post("/tools/convert-video")
+async def tool_convert_video(video: UploadFile = File(...), output_format: str = Form("mp4"),
+    authorization: str = Header(None)):
+    await get_current_user(authorization)
+    with tempfile.TemporaryDirectory() as tmp:
+        vid_path = os.path.join(tmp, f"input_{video.filename}")
+        out_name = f"converted_{uuid.uuid4().hex[:8]}.{output_format}"
+        out_path = str(TOOLS_OUTPUT_DIR / out_name)
+        with open(vid_path, "wb") as f: f.write(await video.read())
+        if output_format in ("mp3", "wav"):
+            cmd = ["ffmpeg", "-y", "-i", vid_path, "-vn", out_path]
+        else:
+            cmd = ["ffmpeg", "-y", "-i", vid_path, "-c:v", "libx264", "-c:a", "aac", out_path]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
+    return {"download_url": f"/api/tools/download/{out_name}"}
+
+# Tools file download
+@api_router.get("/tools/download/{filename}")
+async def tool_download(filename: str):
+    file_path = TOOLS_OUTPUT_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    ext = filename.split(".")[-1].lower()
+    ct_map = {"mp4": "video/mp4", "mov": "video/quicktime", "avi": "video/x-msvideo", "webm": "video/webm",
+              "mkv": "video/x-matroska", "mp3": "audio/mpeg", "wav": "audio/wav", "srt": "text/plain"}
+    with open(file_path, "rb") as f:
+        data = f.read()
+    return Response(content=data, media_type=ct_map.get(ext, "application/octet-stream"),
+                    headers={"Content-Disposition": f"attachment; filename={filename}"})
+
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 

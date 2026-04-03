@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Plus, Spinner, VideoCamera, FilmStrip, Trash,
-  CopySimple, PencilSimple, SignOut, MicrophoneStage, Calendar, Clock
+  CopySimple, PencilSimple, SignOut, MicrophoneStage, Calendar, Clock, Wrench
 } from "@phosphor-icons/react";
 import { useAuth, ThemeToggle } from "./AuthContext";
 import { API } from "./constants";
@@ -129,6 +129,10 @@ const Dashboard = () => {
                 <Trash className="w-4 h-4" /> Clear All
               </button>
             )}
+            <button onClick={() => navigate("/tools")} data-testid="tools-btn"
+              className={`px-4 py-2.5 text-sm font-semibold rounded-sm transition-colors flex items-center gap-2 ${d?'bg-violet-900/40 text-violet-400 hover:bg-violet-900/60 border border-violet-800':'bg-violet-50 text-violet-600 hover:bg-violet-100 border border-violet-200'}`}>
+              <Wrench className="w-4 h-4" /> Tools
+            </button>
             <button onClick={createProject} data-testid="new-project-btn"
               className={`px-5 py-2.5 text-sm font-semibold rounded-sm transition-colors flex items-center gap-2 ${d?'bg-white text-zinc-950 hover:bg-zinc-200':'bg-zinc-950 text-white hover:bg-zinc-800'}`}>
               <Plus className="w-4 h-4" weight="bold" /> New Project
