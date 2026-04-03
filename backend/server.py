@@ -3045,7 +3045,8 @@ async def tool_voice_replace(video: UploadFile = File(...), extra_text: str = Fo
 # 9. Add Logo
 @api_router.post("/tools/add-logo")
 async def tool_add_logo(video: UploadFile = File(...), logo: UploadFile = File(...),
-    position: str = Form("top-right"), logo_size: int = Form(15), opacity: int = Form(100),
+    position_x: int = Form(80), position_y: int = Form(5),
+    logo_size: int = Form(15), opacity: int = Form(100),
     authorization: str = Header(None)):
     await get_current_user(authorization)
     with tempfile.TemporaryDirectory() as tmp:
@@ -3056,15 +3057,13 @@ async def tool_add_logo(video: UploadFile = File(...), logo: UploadFile = File(.
         with open(vid_path, "wb") as f: f.write(await video.read())
         with open(logo_path, "wb") as f: f.write(await logo.read())
         
-        # Position mapping
-        pos_map = {
-            "top-left": "10:10",
-            "top-right": "W-w-10:10",
-            "bottom-left": "10:H-h-10",
-            "bottom-right": "W-w-10:H-h-10",
-            "center": "(W-w)/2:(H-h)/2",
-        }
-        overlay_pos = pos_map.get(position, "W-w-10:10")
+        # Convert percent position to FFmpeg overlay expression
+        # position_x and position_y are 0-100 percent of video
+        px = max(0, min(100, position_x))
+        py = max(0, min(100, position_y))
+        overlay_x = f"(W-w)*{px}/100"
+        overlay_y = f"(H-h)*{py}/100"
+        overlay_pos = f"{overlay_x}:{overlay_y}"
         
         # Build FFmpeg filter
         alpha = opacity / 100.0

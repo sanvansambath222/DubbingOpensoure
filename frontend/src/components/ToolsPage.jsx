@@ -459,15 +459,59 @@ const ConvertTool = ({ token, d }) => {
   );
 };
 
-// ---- Add Logo Tool ----
+// ---- Add Logo Tool (Drag & Drop) ----
 const AddLogoTool = ({ token, d }) => {
   const [video, setVideo] = useState(null);
   const [logo, setLogo] = useState(null);
-  const [position, setPosition] = useState("top-right");
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [videoPreview, setVideoPreview] = useState(null);
+  const [logoPos, setLogoPos] = useState({ x: 80, y: 5 }); // percent
   const [logoSize, setLogoSize] = useState(15);
   const [opacity, setOpacity] = useState(100);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const previewRef = useRef(null);
+
+  const onVideoSelect = (f) => {
+    setVideo(f);
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setVideoPreview(url);
+    } else { setVideoPreview(null); }
+  };
+
+  const onLogoSelect = (f) => {
+    setLogo(f);
+    if (f) {
+      const reader = new FileReader();
+      reader.onload = (e) => setLogoPreview(e.target.result);
+      reader.readAsDataURL(f);
+    } else { setLogoPreview(null); }
+  };
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setDragging(true);
+  };
+
+  const handleMouseMove = useCallback((e) => {
+    if (!dragging || !previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+    setLogoPos({ x: Math.round(x), y: Math.round(y) });
+  }, [dragging]);
+
+  const handleMouseUp = useCallback(() => { setDragging(false); }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!previewRef.current || !e.touches[0]) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((e.touches[0].clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.touches[0].clientY - rect.top) / rect.height) * 100));
+    setLogoPos({ x: Math.round(x), y: Math.round(y) });
+  }, []);
 
   const handleProcess = async () => {
     if (!video || !logo) return toast.error("Upload video and logo image");
@@ -475,7 +519,8 @@ const AddLogoTool = ({ token, d }) => {
     try {
       const fd = new FormData();
       fd.append("video", video); fd.append("logo", logo);
-      fd.append("position", position); fd.append("logo_size", logoSize); fd.append("opacity", opacity);
+      fd.append("position_x", logoPos.x); fd.append("position_y", logoPos.y);
+      fd.append("logo_size", logoSize); fd.append("opacity", opacity);
       const r = await axios.post(`${API}/tools/add-logo`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
       toast.success("Logo added!");
@@ -484,23 +529,66 @@ const AddLogoTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
-      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
-      <DropZone accept="image/*" label="Upload Logo (PNG recommended)" icon={ImageIcon} file={logo} onFile={setLogo} d={d} />
-      <div className="grid grid-cols-3 gap-3">
-        <Select label="Position" value={position} onChange={setPosition} options={[
-          {value:"top-left",label:"Top Left"},{value:"top-right",label:"Top Right"},
-          {value:"bottom-left",label:"Bottom Left"},{value:"bottom-right",label:"Bottom Right"},
-          {value:"center",label:"Center"}
-        ]} d={d} />
+    <div className="space-y-4"
+      onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+      onTouchMove={handleTouchMove} onTouchEnd={handleMouseUp}>
+      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={onVideoSelect} d={d} />
+      <DropZone accept="image/*" label="Upload Logo (PNG recommended)" icon={ImageIcon} file={logo} onFile={onLogoSelect} d={d} />
+
+      {/* Preview Area - Drag logo here */}
+      {(videoPreview || logoPreview) && (
+        <div className={`rounded-lg overflow-hidden border ${d?'border-zinc-700':'border-zinc-300'}`}>
+          <div className={`text-[10px] px-3 py-1.5 font-medium uppercase tracking-wider ${d?'bg-zinc-800 text-zinc-500':'bg-zinc-100 text-zinc-500'}`}>
+            Drag logo to position it
+          </div>
+          <div ref={previewRef} className="relative w-full bg-black" style={{ aspectRatio: '16/9', cursor: dragging ? 'grabbing' : 'default' }}>
+            {videoPreview && (
+              <video src={videoPreview} muted className="w-full h-full object-contain" />
+            )}
+            {!videoPreview && (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className={`text-xs ${d?'text-zinc-600':'text-zinc-400'}`}>Upload video to see preview</span>
+              </div>
+            )}
+            {logoPreview && (
+              <div
+                onMouseDown={handleMouseDown}
+                onTouchStart={handleMouseDown}
+                style={{
+                  position: 'absolute',
+                  left: `${logoPos.x}%`,
+                  top: `${logoPos.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                  width: `${logoSize}%`,
+                  opacity: opacity / 100,
+                  cursor: dragging ? 'grabbing' : 'grab',
+                  zIndex: 10,
+                  userSelect: 'none',
+                  touchAction: 'none',
+                }}
+                data-testid="logo-draggable"
+              >
+                <img src={logoPreview} alt="Logo" className="w-full h-auto pointer-events-none" draggable={false}
+                  style={{ filter: `drop-shadow(0 2px 4px rgba(0,0,0,0.5))` }} />
+                <div className={`absolute -inset-1 border-2 border-dashed rounded ${dragging ? 'border-pink-400' : 'border-white/50'} pointer-events-none`} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Size: {logoSize}%</label>
-          <input type="range" min={5} max={50} value={logoSize} onChange={e => setLogoSize(Number(e.target.value))} className="w-full mt-2 accent-pink-500" />
+          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Logo Size: {logoSize}%</label>
+          <input type="range" min={3} max={60} value={logoSize} onChange={e => setLogoSize(Number(e.target.value))} className="w-full accent-pink-500" />
         </div>
         <div>
           <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Opacity: {opacity}%</label>
-          <input type="range" min={10} max={100} value={opacity} onChange={e => setOpacity(Number(e.target.value))} className="w-full mt-2 accent-pink-500" />
+          <input type="range" min={10} max={100} value={opacity} onChange={e => setOpacity(Number(e.target.value))} className="w-full accent-pink-500" />
         </div>
+      </div>
+      <div className={`text-[10px] text-center ${d?'text-zinc-600':'text-zinc-400'}`}>
+        Position: X={logoPos.x}% Y={logoPos.y}%
       </div>
       <ProcessBtn onClick={handleProcess} processing={processing} label="Add Logo" color="from-pink-500 to-rose-600" d={d} />
       {result && <DownloadBtn url={result} label="Download Video" d={d} />}
