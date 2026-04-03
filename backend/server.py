@@ -871,8 +871,15 @@ def get_mms_model():
     if _mms_model is None:
         from transformers import VitsModel, AutoTokenizer
         logger.info("Loading Meta MMS Khmer TTS model...")
-        _mms_model = VitsModel.from_pretrained('/root/.cache/mms-tts-khm')
-        _mms_tokenizer = AutoTokenizer.from_pretrained('/root/.cache/mms-tts-khm')
+        cache_dir = os.path.join(str(Path.home()), ".cache", "mms-tts-khm")
+        try:
+            _mms_model = VitsModel.from_pretrained(cache_dir)
+            _mms_tokenizer = AutoTokenizer.from_pretrained(cache_dir)
+        except Exception:
+            _mms_model = VitsModel.from_pretrained("facebook/mms-tts-khm", cache_dir=cache_dir)
+            _mms_tokenizer = AutoTokenizer.from_pretrained("facebook/mms-tts-khm", cache_dir=cache_dir)
+            _mms_model.save_pretrained(cache_dir)
+            _mms_tokenizer.save_pretrained(cache_dir)
         _mms_model.eval()
         logger.info("Meta MMS Khmer model loaded!")
     return _mms_model, _mms_tokenizer
