@@ -1,10 +1,11 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Subtitles, Translate, Scissors, FilmSlate, SpeakerHigh,
   ArrowsOut, ArrowsClockwise, ArrowLeft, UploadSimple, DownloadSimple,
-  SpinnerGap, Check, X, Play, Pause, MicrophoneStage
+  SpinnerGap, MicrophoneStage, Waveform, Image as ImageIcon,
+  CloudArrowUp, File, FileAudio, FileVideo, X, Check, Info, CaretDown
 } from "@phosphor-icons/react";
 import { useAuth, ThemeToggle } from "./AuthContext";
 import { API } from "./constants";
@@ -12,14 +13,134 @@ import axios from "axios";
 import { toast } from "sonner";
 
 const TOOLS = [
-  { id: "subtitles", name: "Add Subtitles", desc: "Burn subtitles into video from SRT file", icon: Subtitles, color: "bg-rose-500" },
-  { id: "translate", name: "Translate", desc: "Translate SRT subtitles to any language", icon: Translate, color: "bg-violet-500" },
-  { id: "trim", name: "Trim Video", desc: "Cut video by start & end time", icon: Scissors, color: "bg-amber-500" },
-  { id: "ai-clips", name: "AI Clips", desc: "Auto-create short clips from long video", icon: FilmSlate, color: "bg-cyan-500" },
-  { id: "tts", name: "Text to Speech", desc: "Type text and get Khmer audio", icon: SpeakerHigh, color: "bg-emerald-500" },
-  { id: "resize", name: "Resize Video", desc: "Change video size: 16:9, 9:16, 1:1", icon: ArrowsOut, color: "bg-blue-500" },
-  { id: "convert", name: "Convert", desc: "Convert video format: MP4, MOV, AVI, WebM", icon: ArrowsClockwise, color: "bg-orange-500" },
+  { id: "voice-replace", name: "Voice Replace", desc: "Remove voice, rewrite text, generate new voice", icon: Waveform, color: "from-rose-500 to-pink-600", tag: "AI" },
+  { id: "subtitles", name: "Add Subtitles", desc: "Burn subtitles into video", icon: Subtitles, color: "from-violet-500 to-purple-600", tag: null },
+  { id: "translate", name: "Translate", desc: "Translate text or SRT file", icon: Translate, color: "from-sky-500 to-blue-600", tag: "AI" },
+  { id: "trim", name: "Trim Video", desc: "Cut video by time range", icon: Scissors, color: "from-amber-500 to-orange-600", tag: null },
+  { id: "ai-clips", name: "AI Clips", desc: "Auto-create short clips", icon: FilmSlate, color: "from-cyan-500 to-teal-600", tag: "AI" },
+  { id: "tts", name: "Text to Speech", desc: "Type text, get Khmer audio", icon: SpeakerHigh, color: "from-emerald-500 to-green-600", tag: null },
+  { id: "resize", name: "Resize Video", desc: "Change video dimensions", icon: ArrowsOut, color: "from-blue-500 to-indigo-600", tag: null },
+  { id: "convert", name: "Convert", desc: "Change video/audio format", icon: ArrowsClockwise, color: "from-orange-500 to-red-600", tag: null },
+  { id: "add-logo", name: "Add Logo", desc: "Overlay logo/watermark on video", icon: ImageIcon, color: "from-pink-500 to-rose-600", tag: null },
 ];
+
+// Shared file drop zone
+const DropZone = ({ accept, label, icon: Icon, file, onFile, d }) => {
+  const ref = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const onDrop = useCallback((e) => { e.preventDefault(); setDragging(false); if(e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); }, [onFile]);
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+      onClick={() => ref.current?.click()}
+      className={`relative cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-all ${dragging ? (d?'border-white/40 bg-white/5':'border-zinc-400 bg-zinc-50') : file ? (d?'border-emerald-500/40 bg-emerald-900/10':'border-emerald-400 bg-emerald-50') : (d?'border-zinc-700 hover:border-zinc-500':'border-zinc-300 hover:border-zinc-400')}`}
+      data-testid={`drop-${label.toLowerCase().replace(/\s/g,'-')}`}
+    >
+      <input ref={ref} type="file" accept={accept} className="hidden" onChange={e => { if(e.target.files[0]) onFile(e.target.files[0]); }} />
+      {file ? (
+        <div className="flex items-center justify-center gap-2">
+          <Check className="w-4 h-4 text-emerald-500" />
+          <span className={`text-sm truncate max-w-[200px] ${d?'text-emerald-400':'text-emerald-600'}`}>{file.name}</span>
+          <button onClick={(e) => { e.stopPropagation(); onFile(null); }} className="ml-1"><X className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" /></button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-1.5">
+          <Icon className={`w-6 h-6 ${d?'text-zinc-500':'text-zinc-400'}`} />
+          <span className={`text-xs ${d?'text-zinc-500':'text-zinc-500'}`}>{label}</span>
+          <span className={`text-[10px] ${d?'text-zinc-600':'text-zinc-400'}`}>Click or drag file here</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Shared select
+const Select = ({ label, value, onChange, options, d }) => (
+  <div>
+    {label && <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>{label}</label>}
+    <div className="relative">
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className={`w-full text-sm p-2.5 pr-8 rounded-lg border appearance-none transition-colors ${d?'bg-zinc-800/80 border-zinc-700 text-white hover:border-zinc-500 focus:border-zinc-400':'bg-white border-zinc-300 text-zinc-800 hover:border-zinc-400 focus:border-zinc-500'} outline-none`}>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <CaretDown className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${d?'text-zinc-500':'text-zinc-400'}`} />
+    </div>
+  </div>
+);
+
+// Shared process button
+const ProcessBtn = ({ onClick, processing, label, procLabel, color, d }) => (
+  <button onClick={onClick} disabled={processing} data-testid={`process-btn-${label.toLowerCase().replace(/\s/g,'-')}`}
+    className={`w-full py-3 rounded-lg text-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-gradient-to-r ${color} hover:opacity-90 active:scale-[0.98]`}>
+    {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" />{procLabel || "Processing..."}</> : label}
+  </button>
+);
+
+// Shared download button
+const DownloadBtn = ({ url, label, d }) => (
+  <a href={url.startsWith("http") ? url : `${API.replace('/api','')}${url}`} download
+    className={`block w-full py-2.5 rounded-lg text-sm font-semibold text-center transition-all ${d?'bg-emerald-600 hover:bg-emerald-500 text-white':'bg-emerald-500 hover:bg-emerald-600 text-white'}`} data-testid="download-btn">
+    <DownloadSimple className="w-4 h-4 inline mr-1.5" />{label || "Download"}
+  </a>
+);
+
+// ---- Voice Replace Tool ----
+const VoiceReplaceTool = ({ token, d }) => {
+  const [video, setVideo] = useState(null);
+  const [extraText, setExtraText] = useState("");
+  const [voice, setVoice] = useState("mms_khmer");
+  const [targetLang, setTargetLang] = useState("km");
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [result, setResult] = useState(null);
+
+  const voices = [
+    { value: "mms_khmer", label: "Meta AI (Boy) - Khmer" },
+    { value: "mms_khmer_f", label: "Meta AI (Girl) - Khmer" },
+    { value: "sophea", label: "Sreymom (Girl) - Khmer" },
+    { value: "dara", label: "Piseth (Boy) - Khmer" },
+  ];
+
+  const handleProcess = async () => {
+    if (!video) return toast.error("Upload a video or audio file");
+    setProcessing(true); setProgress("Uploading...");
+    try {
+      const fd = new FormData();
+      fd.append("video", video);
+      fd.append("extra_text", extraText);
+      fd.append("voice", voice);
+      fd.append("target_language", targetLang);
+      const r = await axios.post(`${API}/tools/voice-replace`, fd, {
+        headers: { Authorization: `Bearer ${token}` }, timeout: 600000,
+        onUploadProgress: (p) => { if(p.loaded === p.total) setProgress("Processing... (this may take 1-3 min)"); }
+      });
+      setResult(r.data.download_url);
+      toast.success("Voice replaced!");
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    finally { setProcessing(false); setProgress(""); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <DropZone accept="video/*,audio/*" label="Upload Video or Audio" icon={FileVideo} file={video} onFile={setVideo} d={d} />
+      <textarea value={extraText} onChange={e => setExtraText(e.target.value)} rows={3}
+        placeholder="Add extra text (optional) - will be added after the transcription..."
+        className={`w-full text-sm p-3 rounded-lg border resize-none transition-colors ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-zinc-500':'bg-white border-zinc-300 placeholder:text-zinc-400 focus:border-zinc-400'} outline-none`}
+        data-testid="voice-replace-extra-text" />
+      <div className="grid grid-cols-2 gap-3">
+        <Select label="Voice" value={voice} onChange={setVoice} options={voices} d={d} />
+        <Select label="Language" value={targetLang} onChange={setTargetLang} options={[
+          {value:"km",label:"Khmer"},{value:"en",label:"English"},{value:"zh",label:"Chinese"},{value:"th",label:"Thai"},{value:"vi",label:"Vietnamese"},{value:"ko",label:"Korean"},{value:"ja",label:"Japanese"}
+        ]} d={d} />
+      </div>
+      {progress && <div className={`text-xs text-center py-1 ${d?'text-zinc-400':'text-zinc-500'}`}>{progress}</div>}
+      <ProcessBtn onClick={handleProcess} processing={processing} label="Replace Voice" procLabel={progress || "Processing..."} color="from-rose-500 to-pink-600" d={d} />
+      {result && <DownloadBtn url={result} label="Download Result" d={d} />}
+    </div>
+  );
+};
 
 // ---- Subtitles Tool ----
 const SubtitlesTool = ({ token, d }) => {
@@ -36,63 +157,34 @@ const SubtitlesTool = ({ token, d }) => {
     setProcessing(true);
     try {
       const fd = new FormData();
-      fd.append("video", video);
-      fd.append("srt", srt);
-      fd.append("font_size", fontSize);
-      fd.append("font_color", fontColor);
-      fd.append("position", position);
-      const r = await axios.post(`${API}/tools/add-subtitles`, fd, {
-        headers: { Authorization: `Bearer ${token}` }, timeout: 600000
-      });
+      fd.append("video", video); fd.append("srt", srt);
+      fd.append("font_size", fontSize); fd.append("font_color", fontColor); fd.append("position", position);
+      const r = await axios.post(`${API}/tools/add-subtitles`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
-      toast.success("Subtitles burned!");
+      toast.success("Subtitles added!");
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); }
   };
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className={`block text-sm font-medium mb-1 ${d?'text-zinc-300':'text-zinc-700'}`}>Video File</label>
-        <input type="file" accept="video/*" onChange={e => setVideo(e.target.files[0])}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="subtitles-video-input" />
-      </div>
-      <div>
-        <label className={`block text-sm font-medium mb-1 ${d?'text-zinc-300':'text-zinc-700'}`}>SRT Subtitle File</label>
-        <input type="file" accept=".srt,.vtt,.ass" onChange={e => setSrt(e.target.files[0])}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="subtitles-srt-input" />
-      </div>
+      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
+      <DropZone accept=".srt,.vtt,.ass" label="Upload SRT Subtitle" icon={File} file={srt} onFile={setSrt} d={d} />
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Font Size</label>
+          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Size</label>
           <input type="number" value={fontSize} onChange={e => setFontSize(e.target.value)} min={12} max={72}
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} />
+            className={`w-full text-sm p-2.5 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
         </div>
-        <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Color</label>
-          <select value={fontColor} onChange={e => setFontColor(e.target.value)}
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`}>
-            <option value="white">White</option>
-            <option value="yellow">Yellow</option>
-            <option value="green">Green</option>
-            <option value="cyan">Cyan</option>
-          </select>
-        </div>
-        <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Position</label>
-          <select value={position} onChange={e => setPosition(e.target.value)}
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`}>
-            <option value="bottom">Bottom</option>
-            <option value="top">Top</option>
-            <option value="center">Center</option>
-          </select>
-        </div>
+        <Select label="Color" value={fontColor} onChange={setFontColor} options={[
+          {value:"white",label:"White"},{value:"yellow",label:"Yellow"},{value:"green",label:"Green"},{value:"cyan",label:"Cyan"}
+        ]} d={d} />
+        <Select label="Position" value={position} onChange={setPosition} options={[
+          {value:"bottom",label:"Bottom"},{value:"top",label:"Top"},{value:"center",label:"Center"}
+        ]} d={d} />
       </div>
-      <button onClick={handleProcess} disabled={processing} data-testid="subtitles-process-btn"
-        className="w-full py-2.5 rounded bg-rose-500 text-white font-semibold hover:bg-rose-600 disabled:opacity-50 flex items-center justify-center gap-2">
-        {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" /> Processing...</> : <><Subtitles className="w-4 h-4" /> Burn Subtitles</>}
-      </button>
-      {result && <a href={`${API.replace('/api','')}${result}`} download className="block w-full py-2.5 rounded bg-emerald-500 text-white font-semibold text-center hover:bg-emerald-600"><DownloadSimple className="w-4 h-4 inline mr-1" />Download Video</a>}
+      <ProcessBtn onClick={handleProcess} processing={processing} label="Burn Subtitles" color="from-violet-500 to-purple-600" d={d} />
+      {result && <DownloadBtn url={result} label="Download Video" d={d} />}
     </div>
   );
 };
@@ -106,7 +198,13 @@ const TranslateTool = ({ token, d }) => {
   const [result, setResult] = useState(null);
   const [translated, setTranslated] = useState("");
 
-  const langs = { km: "Khmer", th: "Thai", vi: "Vietnamese", ko: "Korean", ja: "Japanese", en: "English", zh: "Chinese", es: "Spanish", fr: "French", de: "German", pt: "Portuguese", ru: "Russian", ar: "Arabic", id: "Indonesian", hi: "Hindi", ms: "Malay", lo: "Lao", my: "Burmese", it: "Italian", tl: "Filipino" };
+  const langs = [
+    {value:"km",label:"Khmer"},{value:"en",label:"English"},{value:"zh",label:"Chinese"},{value:"th",label:"Thai"},
+    {value:"vi",label:"Vietnamese"},{value:"ko",label:"Korean"},{value:"ja",label:"Japanese"},{value:"es",label:"Spanish"},
+    {value:"fr",label:"French"},{value:"de",label:"German"},{value:"pt",label:"Portuguese"},{value:"ru",label:"Russian"},
+    {value:"ar",label:"Arabic"},{value:"id",label:"Indonesian"},{value:"hi",label:"Hindi"},{value:"ms",label:"Malay"},
+    {value:"lo",label:"Lao"},{value:"my",label:"Burmese"},{value:"it",label:"Italian"},{value:"tl",label:"Filipino"}
+  ];
 
   const handleTranslate = async () => {
     if (!srt && !textInput.trim()) return toast.error("Upload SRT or type text");
@@ -114,15 +212,15 @@ const TranslateTool = ({ token, d }) => {
     try {
       if (srt) {
         const fd = new FormData();
-        fd.append("srt", srt);
-        fd.append("target_language", targetLang);
+        fd.append("srt", srt); fd.append("target_language", targetLang);
         const r = await axios.post(`${API}/tools/translate-srt`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 300000 });
         setResult(r.data.download_url);
         toast.success("SRT translated!");
       } else {
-        const r = await axios.post(`${API}/tools/translate-text`, { text: textInput, target_language: targetLang }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 60000 });
+        const r = await axios.post(`${API}/tools/translate-text`, { text: textInput, target_language: targetLang },
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 60000 });
         setTranslated(r.data.translated);
-        toast.success("Text translated!");
+        toast.success("Translated!");
       }
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); }
@@ -130,27 +228,14 @@ const TranslateTool = ({ token, d }) => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className={`block text-sm font-medium mb-1 ${d?'text-zinc-300':'text-zinc-700'}`}>SRT File (optional)</label>
-        <input type="file" accept=".srt" onChange={e => setSrt(e.target.files[0])}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="translate-srt-input" />
-      </div>
-      <div className={`text-center text-xs ${d?'text-zinc-500':'text-zinc-400'}`}>— OR type text —</div>
-      <textarea value={textInput} onChange={e => setTextInput(e.target.value)} rows={4} placeholder="Type text to translate..."
-        className={`w-full text-sm p-3 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500':'bg-white border-zinc-300 placeholder:text-zinc-400'}`} data-testid="translate-text-input" />
-      <div>
-        <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Target Language</label>
-        <select value={targetLang} onChange={e => setTargetLang(e.target.value)}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="translate-lang-select">
-          {Object.entries(langs).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-      </div>
-      <button onClick={handleTranslate} disabled={processing} data-testid="translate-process-btn"
-        className="w-full py-2.5 rounded bg-violet-500 text-white font-semibold hover:bg-violet-600 disabled:opacity-50 flex items-center justify-center gap-2">
-        {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" /> Translating...</> : <><Translate className="w-4 h-4" /> Translate</>}
-      </button>
-      {translated && <div className={`p-3 rounded border text-sm ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-gray-50 border-zinc-300'}`} data-testid="translate-result">{translated}</div>}
-      {result && <a href={`${API.replace('/api','')}${result}`} download className="block w-full py-2.5 rounded bg-emerald-500 text-white font-semibold text-center hover:bg-emerald-600"><DownloadSimple className="w-4 h-4 inline mr-1" />Download SRT</a>}
+      <DropZone accept=".srt" label="Upload SRT File (optional)" icon={File} file={srt} onFile={setSrt} d={d} />
+      <div className={`flex items-center gap-2 ${d?'text-zinc-600':'text-zinc-400'}`}><div className="flex-1 h-px bg-current opacity-30" /><span className="text-[10px] uppercase tracking-wider">or type text</span><div className="flex-1 h-px bg-current opacity-30" /></div>
+      <textarea value={textInput} onChange={e => setTextInput(e.target.value)} rows={3} placeholder="Type text to translate..."
+        className={`w-full text-sm p-3 rounded-lg border resize-none ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} data-testid="translate-text-input" />
+      <Select label="Target Language" value={targetLang} onChange={setTargetLang} options={langs} d={d} />
+      <ProcessBtn onClick={handleTranslate} processing={processing} label="Translate" color="from-sky-500 to-blue-600" d={d} />
+      {translated && <div className={`p-3 rounded-lg border text-sm ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-gray-50 border-zinc-200'}`} data-testid="translate-result">{translated}</div>}
+      {result && <DownloadBtn url={result} label="Download SRT" d={d} />}
     </div>
   );
 };
@@ -168,9 +253,7 @@ const TrimTool = ({ token, d }) => {
     setProcessing(true);
     try {
       const fd = new FormData();
-      fd.append("video", video);
-      fd.append("start_time", startTime);
-      fd.append("end_time", endTime);
+      fd.append("video", video); fd.append("start_time", startTime); fd.append("end_time", endTime);
       const r = await axios.post(`${API}/tools/trim-video`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
       toast.success("Video trimmed!");
@@ -178,30 +261,23 @@ const TrimTool = ({ token, d }) => {
     finally { setProcessing(false); }
   };
 
+  const TimeInput = ({ label, value, onChange }) => (
+    <div>
+      <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>{label}</label>
+      <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="HH:MM:SS"
+        className={`w-full text-sm p-2.5 rounded-lg border font-mono ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
+    </div>
+  );
+
   return (
     <div className="space-y-4">
-      <div>
-        <label className={`block text-sm font-medium mb-1 ${d?'text-zinc-300':'text-zinc-700'}`}>Video File</label>
-        <input type="file" accept="video/*" onChange={e => setVideo(e.target.files[0])}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="trim-video-input" />
-      </div>
+      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Start Time (HH:MM:SS)</label>
-          <input type="text" value={startTime} onChange={e => setStartTime(e.target.value)} placeholder="00:00:00"
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="trim-start-input" />
-        </div>
-        <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>End Time (HH:MM:SS)</label>
-          <input type="text" value={endTime} onChange={e => setEndTime(e.target.value)} placeholder="00:00:30"
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="trim-end-input" />
-        </div>
+        <TimeInput label="Start Time" value={startTime} onChange={setStartTime} />
+        <TimeInput label="End Time" value={endTime} onChange={setEndTime} />
       </div>
-      <button onClick={handleTrim} disabled={processing} data-testid="trim-process-btn"
-        className="w-full py-2.5 rounded bg-amber-500 text-white font-semibold hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-2">
-        {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" /> Trimming...</> : <><Scissors className="w-4 h-4" /> Trim Video</>}
-      </button>
-      {result && <a href={`${API.replace('/api','')}${result}`} download className="block w-full py-2.5 rounded bg-emerald-500 text-white font-semibold text-center hover:bg-emerald-600"><DownloadSimple className="w-4 h-4 inline mr-1" />Download Trimmed</a>}
+      <ProcessBtn onClick={handleTrim} processing={processing} label="Trim Video" color="from-amber-500 to-orange-600" d={d} />
+      {result && <DownloadBtn url={result} label="Download Trimmed" d={d} />}
     </div>
   );
 };
@@ -219,9 +295,7 @@ const AIClipsTool = ({ token, d }) => {
     setProcessing(true);
     try {
       const fd = new FormData();
-      fd.append("video", video);
-      fd.append("clip_count", clipCount);
-      fd.append("clip_duration", clipDuration);
+      fd.append("video", video); fd.append("clip_count", clipCount); fd.append("clip_duration", clipDuration);
       const r = await axios.post(`${API}/tools/ai-clips`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setClips(r.data.clips || []);
       toast.success(`${r.data.clips?.length || 0} clips created!`);
@@ -231,33 +305,23 @@ const AIClipsTool = ({ token, d }) => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className={`block text-sm font-medium mb-1 ${d?'text-zinc-300':'text-zinc-700'}`}>Video File</label>
-        <input type="file" accept="video/*" onChange={e => setVideo(e.target.files[0])}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="aiclips-video-input" />
-      </div>
+      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Number of Clips</label>
+          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Number of Clips</label>
           <input type="number" value={clipCount} onChange={e => setClipCount(e.target.value)} min={1} max={10}
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} />
+            className={`w-full text-sm p-2.5 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
         </div>
         <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Clip Duration (sec)</label>
+          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Duration (sec)</label>
           <input type="number" value={clipDuration} onChange={e => setClipDuration(e.target.value)} min={5} max={120}
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} />
+            className={`w-full text-sm p-2.5 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
         </div>
       </div>
-      <button onClick={handleProcess} disabled={processing} data-testid="aiclips-process-btn"
-        className="w-full py-2.5 rounded bg-cyan-500 text-white font-semibold hover:bg-cyan-600 disabled:opacity-50 flex items-center justify-center gap-2">
-        {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" /> Creating Clips...</> : <><FilmSlate className="w-4 h-4" /> Create AI Clips</>}
-      </button>
-      {clips.map((c, i) => (
-        <a key={i} href={`${API.replace('/api','')}${c.url}`} download
-          className={`block p-3 rounded border text-sm ${d?'bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700':'bg-gray-50 border-zinc-300 hover:bg-gray-100'}`}>
-          <DownloadSimple className="w-4 h-4 inline mr-1" />Clip {i+1}: {c.start}s - {c.end}s
-        </a>
-      ))}
+      <ProcessBtn onClick={handleProcess} processing={processing} label="Create AI Clips" procLabel="Analyzing video..." color="from-cyan-500 to-teal-600" d={d} />
+      {clips.length > 0 && <div className="space-y-2">{clips.map((c, i) => (
+        <DownloadBtn key={i} url={c.url} label={`Clip ${i+1} (${c.start}s - ${c.end}s)`} d={d} />
+      ))}</div>}
     </div>
   );
 };
@@ -271,28 +335,25 @@ const TTSTool = ({ token, d }) => {
   const [audioUrl, setAudioUrl] = useState(null);
 
   const voices = [
-    { id: "mms_khmer", name: "Meta AI (Boy) - Khmer" },
-    { id: "mms_khmer_f", name: "Meta AI (Girl) - Khmer" },
-    { id: "sophea", name: "Sreymom (Girl) - Khmer" },
-    { id: "dara", name: "Piseth (Boy) - Khmer" },
-    { id: "en_m1", name: "Guy (Boy) - English" },
-    { id: "en_f1", name: "Jenny (Girl) - English" },
-    { id: "zh_m1", name: "YunXi (Boy) - Chinese" },
-    { id: "zh_f1", name: "XiaoXiao (Girl) - Chinese" },
-    { id: "th_m1", name: "Niwat (Boy) - Thai" },
-    { id: "th_f1", name: "Premwadee (Girl) - Thai" },
+    { value: "mms_khmer", label: "Meta AI (Boy) - Khmer" },
+    { value: "mms_khmer_f", label: "Meta AI (Girl) - Khmer" },
+    { value: "sophea", label: "Sreymom (Girl) - Khmer" },
+    { value: "dara", label: "Piseth (Boy) - Khmer" },
+    { value: "en_m1", label: "Guy (Boy) - English" },
+    { value: "en_f1", label: "Jenny (Girl) - English" },
+    { value: "zh_m1", label: "YunXi (Boy) - Chinese" },
+    { value: "zh_f1", label: "XiaoXiao (Girl) - Chinese" },
+    { value: "th_m1", label: "Niwat (Boy) - Thai" },
+    { value: "th_f1", label: "Premwadee (Girl) - Thai" },
   ];
 
   const handleGenerate = async () => {
     if (!text.trim()) return toast.error("Type some text");
     setProcessing(true);
     try {
-      const r = await axios.post(`${API}/tools/text-to-speech`, { text, voice, speed }, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        responseType: 'blob', timeout: 60000
-      });
-      const url = URL.createObjectURL(r.data);
-      setAudioUrl(url);
+      const r = await axios.post(`${API}/tools/text-to-speech`, { text, voice, speed },
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, responseType: 'blob', timeout: 60000 });
+      setAudioUrl(URL.createObjectURL(r.data));
       toast.success("Audio generated!");
     } catch (e) { toast.error("TTS failed"); }
     finally { setProcessing(false); }
@@ -301,30 +362,20 @@ const TTSTool = ({ token, d }) => {
   return (
     <div className="space-y-4">
       <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Type text here..."
-        className={`w-full text-sm p-3 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500':'bg-white border-zinc-300 placeholder:text-zinc-400'}`} data-testid="tts-text-input" />
+        className={`w-full text-sm p-3 rounded-lg border resize-none ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} data-testid="tts-text-input" />
       <div className="grid grid-cols-2 gap-3">
+        <Select label="Voice" value={voice} onChange={setVoice} options={voices} d={d} />
         <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Voice</label>
-          <select value={voice} onChange={e => setVoice(e.target.value)}
-            className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="tts-voice-select">
-            {voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Speed: {speed >= 0 ? '+' : ''}{speed}%</label>
-          <input type="range" min={-50} max={50} value={speed} onChange={e => setSpeed(Number(e.target.value))}
-            className="w-full" />
+          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Speed: {speed >= 0 ? '+' : ''}{speed}%</label>
+          <input type="range" min={-50} max={50} value={speed} onChange={e => setSpeed(Number(e.target.value))} className="w-full mt-2 accent-emerald-500" />
         </div>
       </div>
-      <button onClick={handleGenerate} disabled={processing} data-testid="tts-process-btn"
-        className="w-full py-2.5 rounded bg-emerald-500 text-white font-semibold hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
-        {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" /> Generating...</> : <><SpeakerHigh className="w-4 h-4" /> Generate Speech</>}
-      </button>
+      <ProcessBtn onClick={handleGenerate} processing={processing} label="Generate Speech" color="from-emerald-500 to-green-600" d={d} />
       {audioUrl && (
         <div className="space-y-2">
-          <audio controls src={audioUrl} className="w-full" data-testid="tts-audio-player" />
-          <a href={audioUrl} download="speech.wav" className="block w-full py-2 rounded bg-emerald-600 text-white font-semibold text-center hover:bg-emerald-700 text-sm">
-            <DownloadSimple className="w-4 h-4 inline mr-1" />Download Audio
+          <audio controls src={audioUrl} className="w-full rounded-lg" data-testid="tts-audio-player" />
+          <a href={audioUrl} download="speech.wav" className={`block w-full py-2.5 rounded-lg text-sm font-semibold text-center ${d?'bg-emerald-600 hover:bg-emerald-500 text-white':'bg-emerald-500 hover:bg-emerald-600 text-white'}`}>
+            <DownloadSimple className="w-4 h-4 inline mr-1.5" />Download Audio
           </a>
         </div>
       )}
@@ -341,11 +392,11 @@ const ResizeTool = ({ token, d }) => {
 
   const presets = [
     { value: "1920:1080", label: "1920x1080 (16:9 Landscape)" },
-    { value: "1080:1920", label: "1080x1920 (9:16 Portrait/TikTok)" },
+    { value: "1080:1920", label: "1080x1920 (9:16 TikTok/Reels)" },
     { value: "1080:1080", label: "1080x1080 (1:1 Square)" },
     { value: "1280:720", label: "1280x720 (HD)" },
     { value: "854:480", label: "854x480 (SD)" },
-    { value: "720:1280", label: "720x1280 (9:16 HD Portrait)" },
+    { value: "720:1280", label: "720x1280 (9:16 Portrait)" },
   ];
 
   const handleResize = async () => {
@@ -353,8 +404,7 @@ const ResizeTool = ({ token, d }) => {
     setProcessing(true);
     try {
       const fd = new FormData();
-      fd.append("video", video);
-      fd.append("resolution", preset);
+      fd.append("video", video); fd.append("resolution", preset);
       const r = await axios.post(`${API}/tools/resize-video`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
       toast.success("Video resized!");
@@ -364,23 +414,10 @@ const ResizeTool = ({ token, d }) => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className={`block text-sm font-medium mb-1 ${d?'text-zinc-300':'text-zinc-700'}`}>Video File</label>
-        <input type="file" accept="video/*" onChange={e => setVideo(e.target.files[0])}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="resize-video-input" />
-      </div>
-      <div>
-        <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Size</label>
-        <select value={preset} onChange={e => setPreset(e.target.value)}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="resize-preset-select">
-          {presets.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-        </select>
-      </div>
-      <button onClick={handleResize} disabled={processing} data-testid="resize-process-btn"
-        className="w-full py-2.5 rounded bg-blue-500 text-white font-semibold hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2">
-        {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" /> Resizing...</> : <><ArrowsOut className="w-4 h-4" /> Resize Video</>}
-      </button>
-      {result && <a href={`${API.replace('/api','')}${result}`} download className="block w-full py-2.5 rounded bg-emerald-500 text-white font-semibold text-center hover:bg-emerald-600"><DownloadSimple className="w-4 h-4 inline mr-1" />Download Resized</a>}
+      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
+      <Select label="Target Size" value={preset} onChange={setPreset} options={presets} d={d} />
+      <ProcessBtn onClick={handleResize} processing={processing} label="Resize Video" color="from-blue-500 to-indigo-600" d={d} />
+      {result && <DownloadBtn url={result} label="Download Resized" d={d} />}
     </div>
   );
 };
@@ -393,22 +430,18 @@ const ConvertTool = ({ token, d }) => {
   const [result, setResult] = useState(null);
 
   const formats = [
-    { value: "mp4", label: "MP4" },
-    { value: "mov", label: "MOV" },
-    { value: "avi", label: "AVI" },
-    { value: "webm", label: "WebM" },
-    { value: "mkv", label: "MKV" },
-    { value: "mp3", label: "MP3 (audio only)" },
-    { value: "wav", label: "WAV (audio only)" },
+    { value: "mp4", label: "MP4 (Video)" }, { value: "mov", label: "MOV (Video)" },
+    { value: "avi", label: "AVI (Video)" }, { value: "webm", label: "WebM (Video)" },
+    { value: "mkv", label: "MKV (Video)" }, { value: "mp3", label: "MP3 (Audio)" },
+    { value: "wav", label: "WAV (Audio)" },
   ];
 
   const handleConvert = async () => {
-    if (!video) return toast.error("Upload a video");
+    if (!video) return toast.error("Upload a file");
     setProcessing(true);
     try {
       const fd = new FormData();
-      fd.append("video", video);
-      fd.append("output_format", format);
+      fd.append("video", video); fd.append("output_format", format);
       const r = await axios.post(`${API}/tools/convert-video`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
       toast.success("Converted!");
@@ -418,28 +451,65 @@ const ConvertTool = ({ token, d }) => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className={`block text-sm font-medium mb-1 ${d?'text-zinc-300':'text-zinc-700'}`}>Video/Audio File</label>
-        <input type="file" accept="video/*,audio/*" onChange={e => setVideo(e.target.files[0])}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="convert-video-input" />
+      <DropZone accept="video/*,audio/*" label="Upload Video or Audio" icon={FileVideo} file={video} onFile={setVideo} d={d} />
+      <Select label="Output Format" value={format} onChange={setFormat} options={formats} d={d} />
+      <ProcessBtn onClick={handleConvert} processing={processing} label="Convert" color="from-orange-500 to-red-600" d={d} />
+      {result && <DownloadBtn url={result} label="Download" d={d} />}
+    </div>
+  );
+};
+
+// ---- Add Logo Tool ----
+const AddLogoTool = ({ token, d }) => {
+  const [video, setVideo] = useState(null);
+  const [logo, setLogo] = useState(null);
+  const [position, setPosition] = useState("top-right");
+  const [logoSize, setLogoSize] = useState(15);
+  const [opacity, setOpacity] = useState(100);
+  const [processing, setProcessing] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleProcess = async () => {
+    if (!video || !logo) return toast.error("Upload video and logo image");
+    setProcessing(true);
+    try {
+      const fd = new FormData();
+      fd.append("video", video); fd.append("logo", logo);
+      fd.append("position", position); fd.append("logo_size", logoSize); fd.append("opacity", opacity);
+      const r = await axios.post(`${API}/tools/add-logo`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
+      setResult(r.data.download_url);
+      toast.success("Logo added!");
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    finally { setProcessing(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
+      <DropZone accept="image/*" label="Upload Logo (PNG recommended)" icon={ImageIcon} file={logo} onFile={setLogo} d={d} />
+      <div className="grid grid-cols-3 gap-3">
+        <Select label="Position" value={position} onChange={setPosition} options={[
+          {value:"top-left",label:"Top Left"},{value:"top-right",label:"Top Right"},
+          {value:"bottom-left",label:"Bottom Left"},{value:"bottom-right",label:"Bottom Right"},
+          {value:"center",label:"Center"}
+        ]} d={d} />
+        <div>
+          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Size: {logoSize}%</label>
+          <input type="range" min={5} max={50} value={logoSize} onChange={e => setLogoSize(Number(e.target.value))} className="w-full mt-2 accent-pink-500" />
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Opacity: {opacity}%</label>
+          <input type="range" min={10} max={100} value={opacity} onChange={e => setOpacity(Number(e.target.value))} className="w-full mt-2 accent-pink-500" />
+        </div>
       </div>
-      <div>
-        <label className={`block text-xs mb-1 ${d?'text-zinc-400':'text-zinc-600'}`}>Output Format</label>
-        <select value={format} onChange={e => setFormat(e.target.value)}
-          className={`w-full text-sm p-2 rounded border ${d?'bg-zinc-800 border-zinc-700 text-white':'bg-white border-zinc-300'}`} data-testid="convert-format-select">
-          {formats.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-        </select>
-      </div>
-      <button onClick={handleConvert} disabled={processing} data-testid="convert-process-btn"
-        className="w-full py-2.5 rounded bg-orange-500 text-white font-semibold hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2">
-        {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" /> Converting...</> : <><ArrowsClockwise className="w-4 h-4" /> Convert</>}
-      </button>
-      {result && <a href={`${API.replace('/api','')}${result}`} download className="block w-full py-2.5 rounded bg-emerald-500 text-white font-semibold text-center hover:bg-emerald-600"><DownloadSimple className="w-4 h-4 inline mr-1" />Download</a>}
+      <ProcessBtn onClick={handleProcess} processing={processing} label="Add Logo" color="from-pink-500 to-rose-600" d={d} />
+      {result && <DownloadBtn url={result} label="Download Video" d={d} />}
     </div>
   );
 };
 
 const TOOL_COMPONENTS = {
+  "voice-replace": VoiceReplaceTool,
   "subtitles": SubtitlesTool,
   "translate": TranslateTool,
   "trim": TrimTool,
@@ -447,10 +517,11 @@ const TOOL_COMPONENTS = {
   "tts": TTSTool,
   "resize": ResizeTool,
   "convert": ConvertTool,
+  "add-logo": AddLogoTool,
 };
 
 const ToolsPage = () => {
-  const { user, token, isDark, logout } = useAuth();
+  const { user, token, isDark } = useAuth();
   const d = isDark;
   const navigate = useNavigate();
   const [activeTool, setActiveTool] = useState(null);
@@ -461,65 +532,71 @@ const ToolsPage = () => {
   return (
     <div className={`min-h-screen ${d?'bg-zinc-950':'bg-gray-50'}`} style={{fontFamily:"'IBM Plex Sans',sans-serif"}}>
       {/* Header */}
-      <header className={`sticky top-0 z-50 backdrop-blur-xl shadow-sm ${d?'bg-zinc-950/80 border-b border-zinc-800':'bg-white/70 border-b border-black/10'}`}>
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={() => navigate("/dashboard")} className={`flex items-center gap-2 ${d?'text-zinc-400 hover:text-white':'text-zinc-600 hover:text-zinc-900'}`}>
-              <MicrophoneStage className="w-5 h-5" weight="fill" />
-              <span className="font-semibold" style={{fontFamily:"'Outfit',sans-serif"}}>VoxiDub</span>
-            </button>
-            <span className={`text-xs px-2 py-0.5 rounded ${d?'bg-zinc-800 text-zinc-400':'bg-zinc-200 text-zinc-600'}`}>Tools</span>
-          </div>
+      <header className={`sticky top-0 z-50 backdrop-blur-xl shadow-sm ${d?'bg-zinc-950/80 border-b border-zinc-800':'bg-white/80 border-b border-zinc-200'}`}>
+        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <button onClick={() => navigate("/dashboard")} className={`flex items-center gap-2 transition-colors ${d?'text-zinc-400 hover:text-white':'text-zinc-600 hover:text-zinc-900'}`}>
+              <MicrophoneStage className="w-5 h-5" weight="fill" />
+              <span className="font-bold text-sm" style={{fontFamily:"'Outfit',sans-serif"}}>VoxiDub</span>
+            </button>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium tracking-wide uppercase ${d?'bg-violet-500/20 text-violet-400':'bg-violet-100 text-violet-600'}`}>Tools</span>
+          </div>
+          <div className="flex items-center gap-2">
             <ThemeToggle />
-            <button onClick={() => navigate("/dashboard")} className={`text-sm px-3 py-1.5 rounded ${d?'bg-zinc-800 text-zinc-300 hover:bg-zinc-700':'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'}`}>
-              <ArrowLeft className="w-3.5 h-3.5 inline mr-1" />Dashboard
+            <button onClick={() => navigate("/dashboard")} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${d?'bg-zinc-800 text-zinc-300 hover:bg-zinc-700':'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'}`}>
+              <ArrowLeft className="w-3 h-3" />Dashboard
             </button>
           </div>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-6xl mx-auto px-6 py-8">
         {!activeTool ? (
           <>
             <div className="mb-8">
-              <h1 className={`text-2xl font-bold ${d?'text-white':'text-zinc-900'}`}>Video & Audio Tools</h1>
-              <p className={`text-sm mt-1 ${d?'text-zinc-400':'text-zinc-500'}`}>Free tools powered by FFmpeg & AI</p>
+              <h1 className={`text-2xl font-bold tracking-tight ${d?'text-white':'text-zinc-900'}`}>Video & Audio Tools</h1>
+              <p className={`text-sm mt-1 ${d?'text-zinc-500':'text-zinc-500'}`}>Professional tools powered by FFmpeg & AI — free to use</p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {TOOLS.map((tool, i) => (
                 <motion.button key={tool.id}
-                  initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.3 }}
                   onClick={() => setActiveTool(tool.id)}
                   data-testid={`tool-card-${tool.id}`}
-                  className={`p-5 rounded-xl border text-left transition-all hover:scale-[1.02] hover:shadow-lg ${d?'bg-zinc-900 border-zinc-800 hover:border-zinc-600':'bg-white border-zinc-200 hover:border-zinc-400'}`}>
-                  <div className={`w-10 h-10 rounded-lg ${tool.color} flex items-center justify-center mb-3`}>
-                    <tool.icon className="w-5 h-5 text-white" weight="bold" />
+                  className={`group relative p-5 rounded-xl border text-left transition-all duration-200 hover:shadow-lg active:scale-[0.98] ${d?'bg-zinc-900/80 border-zinc-800 hover:border-zinc-600':'bg-white border-zinc-200 hover:border-zinc-300 hover:shadow-zinc-200/50'}`}>
+                  <div className="flex items-start justify-between">
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center shadow-lg`}>
+                      <tool.icon className="w-5 h-5 text-white" weight="bold" />
+                    </div>
+                    {tool.tag && <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wider ${d?'bg-amber-500/20 text-amber-400':'bg-amber-100 text-amber-600'}`}>{tool.tag}</span>}
                   </div>
-                  <div className={`text-sm font-semibold ${d?'text-white':'text-zinc-900'}`}>{tool.name}</div>
-                  <div className={`text-xs mt-1 ${d?'text-zinc-500':'text-zinc-500'}`}>{tool.desc}</div>
+                  <div className={`text-sm font-semibold mt-3 ${d?'text-white':'text-zinc-900'}`}>{tool.name}</div>
+                  <div className={`text-xs mt-0.5 leading-relaxed ${d?'text-zinc-500':'text-zinc-500'}`}>{tool.desc}</div>
+                  <div className={`absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-gradient-to-br ${tool.color} mix-blend-overlay`} style={{opacity: 0.03}} />
                 </motion.button>
               ))}
             </div>
           </>
         ) : (
-          <div>
-            <button onClick={() => setActiveTool(null)} className={`flex items-center gap-1.5 text-sm mb-6 ${d?'text-zinc-400 hover:text-white':'text-zinc-600 hover:text-zinc-900'}`} data-testid="tools-back-btn">
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.2 }}>
+            <button onClick={() => setActiveTool(null)} className={`flex items-center gap-1.5 text-sm mb-6 transition-colors ${d?'text-zinc-400 hover:text-white':'text-zinc-500 hover:text-zinc-900'}`} data-testid="tools-back-btn">
               <ArrowLeft className="w-4 h-4" /> Back to Tools
             </button>
-            <div className={`max-w-lg mx-auto rounded-xl border p-6 ${d?'bg-zinc-900 border-zinc-800':'bg-white border-zinc-200'}`}>
-              <div className="flex items-center gap-3 mb-5">
-                <div className={`w-10 h-10 rounded-lg ${activeToolInfo.color} flex items-center justify-center`}>
+            <div className={`max-w-lg mx-auto rounded-xl border overflow-hidden ${d?'bg-zinc-900/80 border-zinc-800':'bg-white border-zinc-200 shadow-sm'}`}>
+              <div className={`p-5 bg-gradient-to-r ${activeToolInfo.color} flex items-center gap-3`}>
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
                   <activeToolInfo.icon className="w-5 h-5 text-white" weight="bold" />
                 </div>
                 <div>
-                  <div className={`text-lg font-semibold ${d?'text-white':'text-zinc-900'}`}>{activeToolInfo.name}</div>
-                  <div className={`text-xs ${d?'text-zinc-500':'text-zinc-500'}`}>{activeToolInfo.desc}</div>
+                  <div className="text-base font-bold text-white">{activeToolInfo.name}</div>
+                  <div className="text-xs text-white/70">{activeToolInfo.desc}</div>
                 </div>
               </div>
-              <ToolComponent token={token} d={d} />
+              <div className="p-5">
+                <ToolComponent token={token} d={d} />
+              </div>
             </div>
-          </div>
+          </motion.div>
         )}
       </div>
     </div>

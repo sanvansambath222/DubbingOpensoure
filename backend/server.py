@@ -2949,6 +2949,140 @@ async def tool_download(filename: str):
     return Response(content=data, media_type=ct_map.get(ext, "application/octet-stream"),
                     headers={"Content-Disposition": f"attachment; filename={filename}"})
 
+# 8. Voice Replace (Demucs + Whisper + GPT + TTS + Mix)
+@api_router.post("/tools/voice-replace")
+async def tool_voice_replace(video: UploadFile = File(...), extra_text: str = Form(""),
+    voice: str = Form("mms_khmer"), target_language: str = Form("km"), authorization: str = Header(None)):
+    from emergentintegrations.llm.openai import OpenAISpeechToText
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    user = await get_current_user(authorization)
+    
+    with tempfile.TemporaryDirectory() as tmp:
+        vid_path = os.path.join(tmp, f"input_{video.filename}")
+        audio_path = os.path.join(tmp, "audio.wav")
+        bg_path = os.path.join(tmp, "background.wav")
+        tts_path = os.path.join(tmp, "tts_output.wav")
+        with open(vid_path, "wb") as f: f.write(await video.read())
+        
+        # Step 1: Extract audio
+        subprocess.run(["ffmpeg", "-y", "-i", vid_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path], capture_output=True)
+        
+        # Step 2: Demucs vocal removal (get background only)
+        logger.info("Voice Replace: Running Demucs...")
+        try:
+            bg_audio = await asyncio.get_event_loop().run_in_executor(None, lambda: run_demucs_chunked(audio_path))
+            if bg_audio:
+                import shutil as sh
+                sh.copy2(bg_audio, bg_path)
+            else:
+                sh.copy2(audio_path, bg_path)
+        except Exception as e:
+            logger.warning(f"Demucs failed: {e}, using original audio as background")
+            import shutil as sh
+            sh.copy2(audio_path, bg_path)
+        
+        # Step 3: Transcribe with Whisper
+        logger.info("Voice Replace: Transcribing...")
+        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+        with open(audio_path, "rb") as af:
+            response = await stt.transcribe(file=af, model="whisper-1", response_format="verbose_json")
+        original_text = response.text if hasattr(response, 'text') else str(response)
+        
+        # Step 4: GPT rewrite + add extra text
+        logger.info("Voice Replace: GPT rewriting...")
+        target_name = LANGUAGE_NAMES.get(target_language, target_language)
+        prompt_text = f"Original speech:\n{original_text}"
+        if extra_text.strip():
+            prompt_text += f"\n\nAdditional text to include:\n{extra_text}"
+        
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"vr_{uuid.uuid4().hex[:6]}",
+            system_message=f"Rewrite and translate the following speech into {target_name}. Make it sound natural and professional. If additional text is provided, incorporate it naturally. Return ONLY the translated text.")
+        chat.with_model("openai", "gpt-5.2")
+        final_text = await chat.send_message(UserMessage(text=prompt_text))
+        logger.info(f"Voice Replace: Final text ({len(final_text)} chars)")
+        
+        # Step 5: Generate TTS
+        logger.info(f"Voice Replace: Generating TTS with {voice}...")
+        voice_id = voice
+        if is_mms_voice(voice_id):
+            mms_speed = 0.7
+            generate_mms_tts(final_text.strip(), tts_path, speed=mms_speed, female=is_mms_female(voice_id))
+        else:
+            import edge_tts
+            edge_map = {"sophea": "km-KH-SreymomNeural", "dara": "km-KH-PisethNeural"}
+            edge_voice = edge_map.get(voice_id, "km-KH-SreymomNeural")
+            tts_mp3 = tts_path.replace(".wav", ".mp3")
+            communicate = edge_tts.Communicate(final_text.strip(), voice=edge_voice)
+            await communicate.save(tts_mp3)
+            subprocess.run(["ffmpeg", "-y", "-i", tts_mp3, tts_path], capture_output=True)
+        
+        # Step 6: Mix TTS + background
+        logger.info("Voice Replace: Mixing...")
+        out_name = f"voice_replaced_{uuid.uuid4().hex[:8]}.mp4"
+        out_path = str(TOOLS_OUTPUT_DIR / out_name)
+        
+        is_video = video.filename.lower().endswith(('.mp4', '.mov', '.avi', '.mkv', '.webm'))
+        if is_video:
+            mixed_audio = os.path.join(tmp, "mixed.wav")
+            cmd_mix = ["ffmpeg", "-y", "-i", bg_path, "-i", tts_path,
+                       "-filter_complex", "[0:a]volume=0.3[bg];[1:a]volume=1.0[voice];[bg][voice]amix=inputs=2:duration=longest[out]",
+                       "-map", "[out]", mixed_audio]
+            subprocess.run(cmd_mix, capture_output=True)
+            cmd_final = ["ffmpeg", "-y", "-i", vid_path, "-i", mixed_audio,
+                         "-c:v", "copy", "-map", "0:v:0", "-map", "1:a:0", "-shortest", out_path]
+            subprocess.run(cmd_final, capture_output=True)
+        else:
+            out_name = out_name.replace(".mp4", ".wav")
+            out_path = str(TOOLS_OUTPUT_DIR / out_name)
+            cmd_mix = ["ffmpeg", "-y", "-i", bg_path, "-i", tts_path,
+                       "-filter_complex", "[0:a]volume=0.3[bg];[1:a]volume=1.0[voice];[bg][voice]amix=inputs=2:duration=longest[out]",
+                       "-map", "[out]", out_path]
+            subprocess.run(cmd_mix, capture_output=True)
+        
+        logger.info(f"Voice Replace: Done! Output: {out_name}")
+    return {"download_url": f"/api/tools/download/{out_name}"}
+
+# 9. Add Logo
+@api_router.post("/tools/add-logo")
+async def tool_add_logo(video: UploadFile = File(...), logo: UploadFile = File(...),
+    position: str = Form("top-right"), logo_size: int = Form(15), opacity: int = Form(100),
+    authorization: str = Header(None)):
+    await get_current_user(authorization)
+    with tempfile.TemporaryDirectory() as tmp:
+        vid_path = os.path.join(tmp, f"input_{video.filename}")
+        logo_path = os.path.join(tmp, f"logo_{logo.filename}")
+        out_name = f"logo_{uuid.uuid4().hex[:8]}.mp4"
+        out_path = str(TOOLS_OUTPUT_DIR / out_name)
+        with open(vid_path, "wb") as f: f.write(await video.read())
+        with open(logo_path, "wb") as f: f.write(await logo.read())
+        
+        # Position mapping
+        pos_map = {
+            "top-left": "10:10",
+            "top-right": "W-w-10:10",
+            "bottom-left": "10:H-h-10",
+            "bottom-right": "W-w-10:H-h-10",
+            "center": "(W-w)/2:(H-h)/2",
+        }
+        overlay_pos = pos_map.get(position, "W-w-10:10")
+        
+        # Build FFmpeg filter
+        alpha = opacity / 100.0
+        scale_filter = f"[1:v]scale=iw*{logo_size}/100:-1"
+        if alpha < 1.0:
+            scale_filter += f",format=rgba,colorchannelmixer=aa={alpha}"
+        scale_filter += "[logo]"
+        
+        filter_complex = f"{scale_filter};[0:v][logo]overlay={overlay_pos}[out]"
+        
+        cmd = ["ffmpeg", "-y", "-i", vid_path, "-i", logo_path,
+               "-filter_complex", filter_complex, "-map", "[out]", "-map", "0:a?",
+               "-c:a", "copy", out_path]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
+    return {"download_url": f"/api/tools/download/{out_name}"}
+
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
