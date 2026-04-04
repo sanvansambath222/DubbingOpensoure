@@ -3536,6 +3536,172 @@ async def generate_license(authorization: str = Header(None)):
     await db.licenses.insert_one({"key": key, "plan": "pro", "expiry": expiry, "machine_id": None, "created_at": datetime.now(timezone.utc).isoformat()})
     return {"key": key, "expiry": expiry}
 
+# ==================== SUBSCRIPTION SYSTEM ====================
+
+SUBSCRIPTION_PLANS = {
+    "free": {
+        "name": "Free Trial",
+        "price_usd": 0,
+        "price_khr": 0,
+        "videos_per_month": 1,
+        "max_duration_min": 5,
+        "priority_queue": False,
+        "watermark": True,
+        "tools_access": True,
+    },
+    "basic": {
+        "name": "Basic",
+        "price_usd": 19,
+        "price_khr": 76000,
+        "videos_per_month": 10,
+        "max_duration_min": 10,
+        "priority_queue": False,
+        "watermark": False,
+        "tools_access": True,
+    },
+    "pro": {
+        "name": "Pro",
+        "price_usd": 49,
+        "price_khr": 196000,
+        "videos_per_month": 50,
+        "max_duration_min": 30,
+        "priority_queue": True,
+        "watermark": False,
+        "tools_access": True,
+    },
+    "business": {
+        "name": "Business",
+        "price_usd": 99,
+        "price_khr": 396000,
+        "videos_per_month": -1,
+        "max_duration_min": 60,
+        "priority_queue": True,
+        "watermark": False,
+        "tools_access": True,
+    },
+}
+
+@api_router.get("/subscription/plans")
+async def get_subscription_plans():
+    """Return all available subscription plans."""
+    plans = []
+    for plan_id, plan in SUBSCRIPTION_PLANS.items():
+        plans.append({**plan, "id": plan_id})
+    return {"plans": plans}
+
+@api_router.get("/subscription/me")
+async def get_my_subscription(authorization: str = Header(None)):
+    """Get current user's subscription status."""
+    user = await get_current_user(authorization)
+    sub = await db.subscriptions.find_one({"user_id": user.user_id}, {"_id": 0})
+    
+    if not sub:
+        now = datetime.now(timezone.utc).isoformat()
+        sub = {
+            "user_id": user.user_id,
+            "plan": "free",
+            "videos_used": 0,
+            "videos_limit": 1,
+            "max_duration_min": 5,
+            "started_at": now,
+            "expires_at": None,
+            "payment_status": "free",
+            "created_at": now,
+        }
+        await db.subscriptions.insert_one({**sub})
+        sub.pop("_id", None)
+    
+    plan_info = SUBSCRIPTION_PLANS.get(sub.get("plan", "free"), SUBSCRIPTION_PLANS["free"])
+    return {
+        "subscription": sub,
+        "plan_info": plan_info,
+        "can_dub": sub.get("plan") == "business" or sub.get("videos_used", 0) < sub.get("videos_limit", 1),
+        "videos_remaining": -1 if plan_info["videos_per_month"] == -1 else max(0, sub.get("videos_limit", 1) - sub.get("videos_used", 0)),
+    }
+
+@api_router.post("/subscription/use-credit")
+async def use_subscription_credit(authorization: str = Header(None)):
+    """Decrement one video credit. Called when a dub starts processing."""
+    user = await get_current_user(authorization)
+    sub = await db.subscriptions.find_one({"user_id": user.user_id}, {"_id": 0})
+    if not sub:
+        raise HTTPException(status_code=403, detail="No subscription found. Please subscribe first.")
+    
+    plan_info = SUBSCRIPTION_PLANS.get(sub.get("plan", "free"), SUBSCRIPTION_PLANS["free"])
+    
+    if plan_info["videos_per_month"] == -1:
+        await db.subscriptions.update_one(
+            {"user_id": user.user_id},
+            {"$inc": {"videos_used": 1}}
+        )
+        return {"ok": True, "message": "Credit used"}
+    
+    if sub.get("videos_used", 0) >= sub.get("videos_limit", 1):
+        raise HTTPException(status_code=403, detail="Video limit reached. Please upgrade your plan.")
+    
+    await db.subscriptions.update_one(
+        {"user_id": user.user_id},
+        {"$inc": {"videos_used": 1}}
+    )
+    return {"ok": True, "message": "Credit used"}
+
+@api_router.post("/subscription/activate")
+async def activate_subscription(request: Request, authorization: str = Header(None)):
+    """Activate or upgrade a subscription (called after payment verification)."""
+    user = await get_current_user(authorization)
+    body = await request.json()
+    plan_id = body.get("plan", "free")
+    payment_ref = body.get("payment_ref", "")
+    
+    if plan_id not in SUBSCRIPTION_PLANS:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    
+    plan = SUBSCRIPTION_PLANS[plan_id]
+    now = datetime.now(timezone.utc)
+    expires = (now + timedelta(days=30)).isoformat() if plan_id != "free" else None
+    
+    sub_data = {
+        "user_id": user.user_id,
+        "plan": plan_id,
+        "videos_used": 0,
+        "videos_limit": plan["videos_per_month"],
+        "max_duration_min": plan["max_duration_min"],
+        "started_at": now.isoformat(),
+        "expires_at": expires,
+        "payment_status": "paid" if plan_id != "free" else "free",
+        "payment_ref": payment_ref,
+        "updated_at": now.isoformat(),
+    }
+    
+    await db.subscriptions.update_one(
+        {"user_id": user.user_id},
+        {"$set": sub_data},
+        upsert=True,
+    )
+    
+    if plan_id != "free":
+        await db.payments.insert_one({
+            "user_id": user.user_id,
+            "plan": plan_id,
+            "amount_usd": plan["price_usd"],
+            "amount_khr": plan["price_khr"],
+            "payment_ref": payment_ref,
+            "status": "completed",
+            "created_at": now.isoformat(),
+        })
+    
+    logger.info(f"Subscription activated: user={user.user_id} plan={plan_id}")
+    return {"ok": True, "plan": plan_id, "message": f"{plan['name']} plan activated!"}
+
+@api_router.get("/subscription/history")
+async def get_payment_history(authorization: str = Header(None)):
+    """Get user's payment history."""
+    user = await get_current_user(authorization)
+    payments = await db.payments.find(
+        {"user_id": user.user_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return {"payments": payments}
+
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -3611,6 +3777,7 @@ async def auto_cleanup_old_projects():
                 logger.info(f"Auto-cleanup: deleted {deleted_count} projects older than {PROJECT_MAX_AGE_HOURS} hours")
         except Exception as e:
             logger.error(f"Auto-cleanup error: {e}")
+
 
 
 @app.on_event("shutdown")

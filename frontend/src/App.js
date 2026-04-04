@@ -7,6 +7,7 @@ import Dashboard from "./components/Dashboard";
 import Editor from "./components/Editor";
 import SharedProject from "./components/SharedProject";
 import ToolsPage from "./components/ToolsPage";
+import PricingPage from "./components/PricingPage";
 
 function AppRouter() {
   const location = useLocation();
@@ -33,6 +34,7 @@ function AppRouter() {
         </ProtectedRoute>
       } />
       <Route path="/shared/:shareToken" element={<SharedProject />} />
+      <Route path="/pricing" element={<PricingPage />} />
     </Routes>
   );
 }

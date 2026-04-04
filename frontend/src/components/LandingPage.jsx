@@ -53,6 +53,10 @@ const LandingPage = () => {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
+            <button onClick={() => navigate("/pricing")} data-testid="pricing-link"
+              className={`px-4 py-2 text-sm font-medium rounded-sm transition-colors ${d?'text-zinc-400 hover:text-white':'text-zinc-600 hover:text-zinc-950'}`}>
+              Pricing
+            </button>
             <button data-testid="sign-in-button" onClick={() => setShowAuth(true)}
               className={`px-5 py-2 text-sm font-semibold rounded-sm transition-colors ${d?'bg-white text-zinc-950 hover:bg-zinc-200':'bg-zinc-950 text-white hover:bg-zinc-800'}`}>
               Sign In
