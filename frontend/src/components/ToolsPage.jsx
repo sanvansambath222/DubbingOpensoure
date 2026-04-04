@@ -198,7 +198,7 @@ const VoiceReplaceTool = ({ token, d }) => {
           placeholder="Add text to include after transcription..."
           className={`w-full text-sm p-3.5 rounded-xl border resize-none transition-all duration-200 focus:ring-2
             ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-white/5'
-              :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-zinc-200'} outline-none`}
+              :'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-zinc-200'} outline-none`}
           data-testid="voice-replace-extra-text" />
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -207,10 +207,10 @@ const VoiceReplaceTool = ({ token, d }) => {
           <input type="text" placeholder="Search voices..." value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)}
             className={`w-full text-xs p-2.5 rounded-xl border mb-2 transition-all duration-200 focus:ring-2
               ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:ring-white/5'
-                :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} />
+                :'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} />
           <select value={voice} onChange={e => setVoice(e.target.value)}
             className={`w-full text-xs p-2.5 rounded-xl border transition-all duration-200
-              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white':'bg-white border-zinc-300'} outline-none`}>
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white':'bg-white border-zinc-300 text-zinc-900'} outline-none`}>
             {filteredVoices.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
           </select>
         </div>
@@ -260,7 +260,7 @@ const SubtitlesTool = ({ token, d }) => {
           <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Font Size</label>
           <input type="number" value={fontSize} onChange={e => setFontSize(e.target.value)} min={12} max={72}
             className={`w-full text-sm p-3 rounded-xl border transition-all duration-200 focus:ring-2
-              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 text-zinc-900 focus:ring-zinc-200'} outline-none`} />
         </div>
         <Select label="Color" value={fontColor} onChange={setFontColor} options={[
           {value:"white",label:"White"},{value:"yellow",label:"Yellow"},{value:"green",label:"Green"},{value:"cyan",label:"Cyan"}
@@ -321,7 +321,7 @@ const TranslateTool = ({ token, d }) => {
       <textarea value={textInput} onChange={e => setTextInput(e.target.value)} rows={3} placeholder="Type text to translate..."
         className={`w-full text-sm p-3.5 rounded-xl border resize-none transition-all duration-200 focus:ring-2
           ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:ring-white/5'
-            :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} data-testid="translate-text-input" />
+            :'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} data-testid="translate-text-input" />
       <Select label="Target Language" value={targetLang} onChange={setTargetLang} options={langs} d={d} />
       <ProcessBtn onClick={handleTranslate} processing={processing} label="Translate" color="from-sky-500 to-blue-600" d={d} />
       {translated && (
@@ -360,7 +360,7 @@ const TrimTool = ({ token, d }) => {
       <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>{label}</label>
       <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="HH:MM:SS"
         className={`w-full text-sm p-3 rounded-xl border font-mono tracking-widest transition-all duration-200 focus:ring-2
-          ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
+          ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 text-zinc-900 focus:ring-zinc-200'} outline-none`} />
     </div>
   );
 
@@ -406,13 +406,13 @@ const AIClipsTool = ({ token, d }) => {
           <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Number of Clips</label>
           <input type="number" value={clipCount} onChange={e => setClipCount(e.target.value)} min={1} max={10}
             className={`w-full text-sm p-3 rounded-xl border transition-all duration-200 focus:ring-2
-              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 text-zinc-900 focus:ring-zinc-200'} outline-none`} />
         </div>
         <div>
           <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Duration (sec)</label>
           <input type="number" value={clipDuration} onChange={e => setClipDuration(e.target.value)} min={5} max={120}
             className={`w-full text-sm p-3 rounded-xl border transition-all duration-200 focus:ring-2
-              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 text-zinc-900 focus:ring-zinc-200'} outline-none`} />
         </div>
       </div>
       <ProcessBtn onClick={handleProcess} processing={processing} label="Create AI Clips" procLabel="Analyzing video..." color="from-teal-500 to-cyan-600" d={d} />
@@ -499,7 +499,7 @@ const TTSTool = ({ token, d }) => {
         <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Type text here..."
           className={`w-full text-sm p-3.5 rounded-xl border resize-none transition-all duration-200 focus:ring-2
             ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:ring-white/5'
-              :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} data-testid="tts-text-input" />
+              :'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} data-testid="tts-text-input" />
       </div>
 
       {/* Language picker */}
@@ -881,8 +881,8 @@ const ToolsPage = () => {
               <div className={`rounded-t-2xl border border-b-0 p-6 flex items-center gap-4
                 ${d ? 'bg-zinc-900/60 border-zinc-800/50' : 'bg-white border-zinc-200'}`}>
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg
-                  ${d ? `bg-gradient-to-br ${ac.gradient}` : `${ac.bg10} border ${ac.border}`}`}>
-                  <activeToolInfo.icon className={`w-6 h-6 ${d ? 'text-white' : ac.textL}`} weight="duotone" />
+                  bg-gradient-to-br ${ac.gradient}`}>
+                  <activeToolInfo.icon className="w-6 h-6 text-white" weight="duotone" />
                 </div>
                 <div className="flex-1">
                   <div className={`text-xl font-semibold tracking-tight ${d?'text-white':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{activeToolInfo.name}</div>
