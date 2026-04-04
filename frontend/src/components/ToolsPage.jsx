@@ -30,16 +30,30 @@ const LANG_NAMES = {
 };
 
 const TOOLS = [
-  { id: "voice-replace", name: "Voice Replace", desc: "Remove voice, rewrite text, generate new voice", icon: Waveform, color: "from-rose-500 to-pink-600", tag: "AI" },
-  { id: "subtitles", name: "Add Subtitles", desc: "Burn subtitles into video", icon: Subtitles, color: "from-violet-500 to-purple-600", tag: null },
-  { id: "translate", name: "Translate", desc: "Translate text or SRT file", icon: Translate, color: "from-sky-500 to-blue-600", tag: "AI" },
-  { id: "trim", name: "Trim Video", desc: "Cut video by time range", icon: Scissors, color: "from-amber-500 to-orange-600", tag: null },
-  { id: "ai-clips", name: "AI Clips", desc: "Auto-create short clips", icon: FilmSlate, color: "from-cyan-500 to-teal-600", tag: "AI" },
-  { id: "tts", name: "Text to Speech", desc: "Type text, get audio in any language", icon: SpeakerHigh, color: "from-emerald-500 to-green-600", tag: null },
-  { id: "resize", name: "Resize Video", desc: "Change video dimensions", icon: ArrowsOut, color: "from-blue-500 to-indigo-600", tag: null },
-  { id: "convert", name: "Convert", desc: "Change video/audio format", icon: ArrowsClockwise, color: "from-orange-500 to-red-600", tag: null },
-  { id: "add-logo", name: "Add Logo", desc: "Overlay logo/watermark on video", icon: ImageIcon, color: "from-pink-500 to-rose-600", tag: null },
+  { id: "voice-replace", name: "Voice Replace", desc: "Remove voice, rewrite text, generate new voice", icon: Waveform, accent: "cyan", tag: "AI", span: "col-span-1 md:col-span-2 row-span-2" },
+  { id: "subtitles", name: "Add Subtitles", desc: "Burn subtitles into video", icon: Subtitles, accent: "violet", tag: null, span: "col-span-1 md:col-span-2 row-span-1" },
+  { id: "translate", name: "Translate", desc: "Translate text or SRT file", icon: Translate, accent: "sky", tag: "AI", span: "col-span-1 row-span-1" },
+  { id: "trim", name: "Trim Video", desc: "Cut video by time range", icon: Scissors, accent: "amber", tag: null, span: "col-span-1 row-span-1" },
+  { id: "ai-clips", name: "AI Clips", desc: "Auto-create short clips from long video", icon: FilmSlate, accent: "teal", tag: "AI", span: "col-span-1 md:col-span-2 row-span-1" },
+  { id: "tts", name: "Text to Speech", desc: "Type text, get audio in any language", icon: SpeakerHigh, accent: "emerald", tag: null, span: "col-span-1 row-span-1" },
+  { id: "resize", name: "Resize Video", desc: "Change video dimensions", icon: ArrowsOut, accent: "blue", tag: null, span: "col-span-1 row-span-1" },
+  { id: "convert", name: "Convert", desc: "Change video/audio format", icon: ArrowsClockwise, accent: "orange", tag: null, span: "col-span-1 md:col-span-2 row-span-1" },
+  { id: "add-logo", name: "Add Logo", desc: "Overlay logo/watermark on video", icon: ImageIcon, accent: "pink", tag: null, span: "col-span-1 md:col-span-2 row-span-1" },
 ];
+
+// Accent color helpers
+const ACCENT_COLORS = {
+  cyan: { bg: "bg-cyan-500", text: "text-cyan-400", textLight: "text-cyan-600", border: "border-cyan-500/30", glow: "bg-cyan-500/10", gradient: "from-cyan-500 to-cyan-600" },
+  violet: { bg: "bg-violet-500", text: "text-violet-400", textLight: "text-violet-600", border: "border-violet-500/30", glow: "bg-violet-500/10", gradient: "from-violet-500 to-purple-600" },
+  sky: { bg: "bg-sky-500", text: "text-sky-400", textLight: "text-sky-600", border: "border-sky-500/30", glow: "bg-sky-500/10", gradient: "from-sky-500 to-blue-600" },
+  amber: { bg: "bg-amber-500", text: "text-amber-400", textLight: "text-amber-600", border: "border-amber-500/30", glow: "bg-amber-500/10", gradient: "from-amber-500 to-orange-600" },
+  teal: { bg: "bg-teal-500", text: "text-teal-400", textLight: "text-teal-600", border: "border-teal-500/30", glow: "bg-teal-500/10", gradient: "from-teal-500 to-cyan-600" },
+  emerald: { bg: "bg-emerald-500", text: "text-emerald-400", textLight: "text-emerald-600", border: "border-emerald-500/30", glow: "bg-emerald-500/10", gradient: "from-emerald-500 to-green-600" },
+  blue: { bg: "bg-blue-500", text: "text-blue-400", textLight: "text-blue-600", border: "border-blue-500/30", glow: "bg-blue-500/10", gradient: "from-blue-500 to-indigo-600" },
+  orange: { bg: "bg-orange-500", text: "text-orange-400", textLight: "text-orange-600", border: "border-orange-500/30", glow: "bg-orange-500/10", gradient: "from-orange-500 to-red-600" },
+  pink: { bg: "bg-pink-500", text: "text-pink-400", textLight: "text-pink-600", border: "border-pink-500/30", glow: "bg-pink-500/10", gradient: "from-pink-500 to-rose-600" },
+  rose: { bg: "bg-rose-500", text: "text-rose-400", textLight: "text-rose-600", border: "border-rose-500/30", glow: "bg-rose-500/10", gradient: "from-rose-500 to-pink-600" },
+};
 
 // Shared file drop zone
 const DropZone = ({ accept, label, icon: Icon, file, onFile, d }) => {
@@ -90,7 +104,7 @@ const Select = ({ label, value, onChange, options, d }) => (
 // Shared process button
 const ProcessBtn = ({ onClick, processing, label, procLabel, color, d }) => (
   <button onClick={onClick} disabled={processing} data-testid={`process-btn-${label.toLowerCase().replace(/\s/g,'-')}`}
-    className={`w-full py-3 rounded-lg text-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-gradient-to-r ${color} hover:opacity-90 active:scale-[0.98]`}>
+    className={`w-full py-3 rounded-lg font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-[0.98] ${d ? 'bg-white text-zinc-950 hover:bg-zinc-200' : `bg-gradient-to-r ${color} text-white hover:opacity-90`}`}>
     {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" />{procLabel || "Processing..."}</> : label}
   </button>
 );
@@ -689,71 +703,107 @@ const ToolsPage = () => {
 
   const ToolComponent = activeTool ? TOOL_COMPONENTS[activeTool] : null;
   const activeToolInfo = TOOLS.find(t => t.id === activeTool);
+  const ac = activeToolInfo ? ACCENT_COLORS[activeToolInfo.accent] : null;
 
   return (
-    <div className={`min-h-screen ${d?'bg-zinc-950':'bg-gray-50'}`} style={{fontFamily:"'IBM Plex Sans',sans-serif"}}>
+    <div className={`min-h-screen ${d?'bg-zinc-950':'bg-zinc-50'}`} style={{fontFamily:"'IBM Plex Sans',sans-serif"}}>
       {/* Header */}
       <header className={`sticky top-0 z-50 backdrop-blur-xl shadow-sm ${d?'bg-zinc-950/80 border-b border-zinc-800':'bg-white/80 border-b border-zinc-200'}`}>
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 transition-opacity hover:opacity-80">
               <img src="/voxidub-logo.png" alt="VoxiDub.AI" className="h-10 w-10 rounded-full object-cover border-2 border-zinc-200" />
               <span className={`text-lg font-bold tracking-tight ${d?'text-white':'text-zinc-950'}`} style={{fontFamily:"'Outfit',sans-serif"}}>VoxiDub.AI</span>
             </button>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium tracking-wide uppercase ${d?'bg-violet-500/20 text-violet-400':'bg-violet-100 text-violet-600'}`}>Tools</span>
+            <span className={`text-[9px] px-2 py-0.5 rounded font-bold tracking-[0.15em] uppercase ${d?'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20':'bg-violet-100 text-violet-600'}`}>Tools</span>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <button onClick={() => navigate("/dashboard")} className={`text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${d?'bg-zinc-800 text-zinc-300 hover:bg-zinc-700':'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'}`}>
+            <button onClick={() => navigate("/dashboard")} className={`text-xs px-3 py-1.5 rounded-sm transition-colors flex items-center gap-1.5 ${d?'bg-zinc-800 text-zinc-300 hover:bg-zinc-700':'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'}`}>
               <ArrowLeft className="w-3 h-3" />Dashboard
             </button>
           </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-6 py-10">
         {!activeTool ? (
           <>
-            <div className="mb-8">
-              <h1 className={`text-2xl font-bold tracking-tight ${d?'text-white':'text-zinc-900'}`}>Video & Audio Tools</h1>
-              <p className={`text-sm mt-1 ${d?'text-zinc-500':'text-zinc-500'}`}>Professional tools powered by FFmpeg & AI</p>
+            <div className="mb-10">
+              <h1 className={`text-3xl md:text-4xl font-light tracking-tighter ${d?'text-white':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>
+                Video & Audio <span className={`font-medium ${d?'text-cyan-400':'text-violet-600'}`}>Tools</span>
+              </h1>
+              <p className={`text-sm mt-2 ${d?'text-zinc-500':'text-zinc-500'}`}>Professional processing powered by FFmpeg & AI</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {TOOLS.map((tool, i) => (
-                <motion.button key={tool.id}
-                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.3 }}
-                  onClick={() => setActiveTool(tool.id)}
-                  data-testid={`tool-card-${tool.id}`}
-                  className={`group relative p-5 rounded-xl border text-left transition-all duration-200 hover:shadow-lg active:scale-[0.98] ${d?'bg-zinc-900/80 border-zinc-800 hover:border-zinc-600':'bg-white border-zinc-200 hover:border-zinc-300 hover:shadow-zinc-200/50'}`}>
-                  <div className="flex items-start justify-between">
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center shadow-lg`}>
-                      <tool.icon className="w-5 h-5 text-white" weight="bold" />
+
+            {/* Bento Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 auto-rows-[180px]">
+              {TOOLS.map((tool, i) => {
+                const colors = ACCENT_COLORS[tool.accent];
+                return (
+                  <motion.button key={tool.id}
+                    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+                    whileHover={{ scale: 1.015 }}
+                    onClick={() => setActiveTool(tool.id)}
+                    data-testid={`tool-card-${tool.id}`}
+                    className={`${tool.span} group relative p-5 md:p-6 rounded-xl border text-left transition-all duration-300 overflow-hidden ${d
+                      ? 'bg-zinc-900/40 backdrop-blur-md border-zinc-800/50 hover:border-zinc-600/80'
+                      : 'bg-white border-zinc-200 hover:border-zinc-300 hover:shadow-lg hover:shadow-zinc-200/50'
+                    }`}
+                  >
+                    {/* Subtle glow on hover */}
+                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${d ? colors.glow : ''}`} style={{background: d ? `radial-gradient(circle at 30% 30%, ${tool.accent === 'cyan' ? 'rgba(6,182,212,0.06)' : tool.accent === 'violet' ? 'rgba(139,92,246,0.06)' : tool.accent === 'sky' ? 'rgba(14,165,233,0.06)' : tool.accent === 'amber' ? 'rgba(245,158,11,0.06)' : tool.accent === 'teal' ? 'rgba(20,184,166,0.06)' : tool.accent === 'emerald' ? 'rgba(16,185,129,0.06)' : tool.accent === 'blue' ? 'rgba(59,130,246,0.06)' : tool.accent === 'orange' ? 'rgba(249,115,22,0.06)' : 'rgba(236,72,153,0.06)'}, transparent 70%)` : ''}} />
+
+                    <div className="relative z-10 flex flex-col justify-between h-full">
+                      <div className="flex items-start justify-between">
+                        <div className={`w-11 h-11 rounded-lg flex items-center justify-center transition-colors group-hover:border-opacity-50 ${d ? 'bg-white/5 border border-white/10' : `${colors.glow} border ${colors.border}`}`}>
+                          <tool.icon className={`w-5 h-5 ${d ? colors.text : colors.textLight}`} weight="duotone" />
+                        </div>
+                        {tool.tag && (
+                          <span className={`text-[9px] px-2 py-0.5 rounded font-bold tracking-[0.15em] uppercase ${d ? `${colors.glow} ${colors.text} border ${colors.border}` : `${colors.glow} ${colors.textLight} border ${colors.border}`}`}>
+                            {tool.tag}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <div className={`text-base font-medium tracking-tight ${d?'text-zinc-100':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{tool.name}</div>
+                        <div className={`text-xs mt-0.5 leading-relaxed ${d?'text-zinc-500':'text-zinc-500'}`}>{tool.desc}</div>
+                      </div>
                     </div>
-                    {tool.tag && <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wider ${d?'bg-amber-500/20 text-amber-400':'bg-amber-100 text-amber-600'}`}>{tool.tag}</span>}
-                  </div>
-                  <div className={`text-sm font-semibold mt-3 ${d?'text-white':'text-zinc-900'}`}>{tool.name}</div>
-                  <div className={`text-xs mt-0.5 leading-relaxed ${d?'text-zinc-500':'text-zinc-500'}`}>{tool.desc}</div>
-                  <div className={`absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-gradient-to-br ${tool.color} mix-blend-overlay`} style={{opacity: 0.03}} />
-                </motion.button>
-              ))}
+
+                    {/* Bottom accent line on hover */}
+                    <div className={`absolute bottom-0 left-0 right-0 h-[2px] ${colors.bg} opacity-0 group-hover:opacity-60 transition-opacity duration-300`} />
+                  </motion.button>
+                );
+              })}
             </div>
           </>
         ) : (
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.2 }}>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
             <button onClick={() => setActiveTool(null)} className={`flex items-center gap-1.5 text-sm mb-6 transition-colors ${d?'text-zinc-400 hover:text-white':'text-zinc-500 hover:text-zinc-900'}`} data-testid="tools-back-btn">
               <ArrowLeft className="w-4 h-4" /> Back to Tools
             </button>
-            <div className={`${activeTool === 'add-logo' ? 'max-w-4xl' : 'max-w-lg'} mx-auto rounded-xl border overflow-hidden ${d?'bg-zinc-900/80 border-zinc-800':'bg-white border-zinc-200 shadow-sm'}`}>
-              <div className={`p-4 bg-gradient-to-r ${activeToolInfo.color} flex items-center gap-3`}>
-                <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                  <activeToolInfo.icon className="w-4 h-4 text-white" weight="bold" />
+
+            <div className={`${activeTool === 'add-logo' ? 'max-w-4xl' : 'max-w-lg'} mx-auto`}>
+              {/* Tool header card */}
+              <div className={`rounded-t-xl border border-b-0 p-5 flex items-center gap-4 ${d ? `bg-zinc-900/60 ${ac.border} border-zinc-800/50` : 'bg-white border-zinc-200'}`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${d ? 'bg-white/5 border border-white/10' : `${ac.glow} border ${ac.border}`}`}>
+                  <activeToolInfo.icon className={`w-6 h-6 ${d ? ac.text : ac.textLight}`} weight="duotone" />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-white">{activeToolInfo.name}</div>
-                  <div className="text-[11px] text-white/70">{activeToolInfo.desc}</div>
+                  <div className={`text-lg font-medium tracking-tight ${d?'text-white':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{activeToolInfo.name}</div>
+                  <div className={`text-xs ${d?'text-zinc-500':'text-zinc-500'}`}>{activeToolInfo.desc}</div>
                 </div>
+                {activeToolInfo.tag && (
+                  <span className={`ml-auto text-[9px] px-2 py-0.5 rounded font-bold tracking-[0.15em] uppercase ${d ? `${ac.glow} ${ac.text} border ${ac.border}` : `${ac.glow} ${ac.textLight} border ${ac.border}`}`}>
+                    {activeToolInfo.tag}
+                  </span>
+                )}
               </div>
-              <div className="p-5">
+
+              {/* Tool form area */}
+              <div className={`rounded-b-xl border p-5 md:p-6 ${d ? 'bg-zinc-900/40 border-zinc-800/50' : 'bg-white border-zinc-200 shadow-sm'}`}>
                 <ToolComponent token={token} d={d} />
               </div>
             </div>
