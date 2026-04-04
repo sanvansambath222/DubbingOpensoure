@@ -46,6 +46,8 @@ LOCAL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 # Background task queue
 processing_queue = asyncio.Queue()
 queue_status = {}  # project_id -> {"position": int, "status": str, "step": str, "progress": int, "total": int, "started_at": float}
+queue_lock = asyncio.Lock()  # Only 1 video processes at a time
+queue_waitlist = []  # List of project_ids waiting
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -2124,12 +2126,44 @@ async def generate_audio_segments(project_id: str, speed: int = Query(2), bg_vol
     if not segments:
         raise HTTPException(status_code=400, detail="No segments")
 
-    # Run in background if: many segments OR Demucs needed (bg_volume > 0 adds ~2min)
-    if len(segments) > 100 or (bg_volume > 0 and project.get("file_type") == "video"):
-        asyncio.create_task(_generate_audio_background(project_id, project, segments, speed, user, bg_volume))
-        return {"status": "processing", "message": f"Generating audio for {len(segments)} segments in background. Check progress bar."}
+    # Check if already processing
+    qs = queue_status.get(project_id, {})
+    if qs.get("status") == "processing" and qs.get("step") not in ["voices_ready", "done", "error"]:
+        return {"status": "processing", "message": "Already generating audio. Please wait..."}
 
-    return await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
+    # Queue system: wait if another video is processing
+    if queue_lock.locked():
+        position = len(queue_waitlist) + 1
+        queue_status[project_id] = {"position": position, "status": "queued", "step": "waiting", "progress": 0, "total": 0, "started_at": time.time()}
+        queue_waitlist.append(project_id)
+        
+        async def _wait_and_generate():
+            while queue_lock.locked() or (queue_waitlist and queue_waitlist[0] != project_id):
+                try:
+                    pos = queue_waitlist.index(project_id) + 1
+                    queue_status[project_id].update({"position": pos, "status": "queued", "step": "waiting"})
+                except ValueError:
+                    break
+                await asyncio.sleep(3)
+            if project_id in queue_waitlist:
+                queue_waitlist.remove(project_id)
+            async with queue_lock:
+                await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
+        
+        asyncio.create_task(_wait_and_generate())
+        return {"status": "queued", "position": position, "message": f"Server is busy. You are #{position} in queue."}
+
+    # Run in background with lock if: many segments OR Demucs needed
+    if len(segments) > 100 or (bg_volume > 0 and project.get("file_type") == "video"):
+        async def _bg_with_lock():
+            async with queue_lock:
+                await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
+        asyncio.create_task(_bg_with_lock())
+        return {"status": "processing", "message": f"Generating audio for {len(segments)} segments. Check progress bar."}
+
+    # Small job — run directly with lock
+    async with queue_lock:
+        return await _generate_audio_sync(project_id, project, segments, speed, user, bg_volume)
 
 async def _generate_audio_background(project_id, project, segments, speed, user, bg_volume=0):
     """Background audio generation for long videos or when Demucs is needed."""
@@ -3059,6 +3093,17 @@ async def synthesize_gemini_tts(text: str, voice_name: str) -> bytes:
 
 
 
+@api_router.get("/queue/status")
+async def get_queue_status():
+    """Get global queue status — how many jobs are waiting."""
+    is_busy = queue_lock.locked()
+    waiting = len(queue_waitlist)
+    return {
+        "is_busy": is_busy,
+        "waiting_count": waiting,
+        "queue_ids": queue_waitlist[:5],
+    }
+
 # Auto-process: transcribe + translate + generate audio in one call
 @api_router.post("/projects/{project_id}/auto-process")
 async def auto_process(project_id: str, speed: int = Query(2), target_language: str = Query("km"), bg_volume: int = Query(0), authorization: str = Header(None)):
@@ -3076,14 +3121,51 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
     qs = queue_status.get(project_id, {})
     if qs.get("status") == "processing":
         return {"status": "processing", "message": "Already processing. Please wait..."}
+    if qs.get("status") == "queued":
+        pos = qs.get("position", 0)
+        return {"status": "queued", "position": pos, "message": f"In queue. Position: #{pos}"}
     
     import time as _time
-    queue_status[project_id] = {"position": 0, "status": "processing", "step": "starting", "progress": 0, "total": 2, "started_at": _time.time()}
-    
     auth_header = f"Bearer {authorization.split('Bearer ')[-1] if 'Bearer ' in (authorization or '') else authorization}"
     
-    async def _auto_process_background():
-        nonlocal project
+    # Check if another video is processing (queue lock)
+    if queue_lock.locked():
+        # Add to waitlist
+        position = len(queue_waitlist) + 1
+        queue_status[project_id] = {"position": position, "status": "queued", "step": "waiting", "progress": 0, "total": 0, "started_at": _time.time()}
+        queue_waitlist.append(project_id)
+        
+        async def _wait_and_process():
+            # Wait for our turn
+            while queue_lock.locked() or (queue_waitlist and queue_waitlist[0] != project_id):
+                # Update position
+                try:
+                    pos = queue_waitlist.index(project_id) + 1
+                    queue_status[project_id].update({"position": pos, "status": "queued", "step": "waiting"})
+                except ValueError:
+                    break
+                await asyncio.sleep(3)
+            
+            # Remove from waitlist
+            if project_id in queue_waitlist:
+                queue_waitlist.remove(project_id)
+            
+            # Now process
+            await _run_auto_process(project_id, auth_header)
+        
+        asyncio.create_task(_wait_and_process())
+        return {"status": "queued", "position": position, "message": f"Server is busy. You are #{position} in queue. Processing will start automatically."}
+    
+    # No queue — process immediately
+    asyncio.create_task(_run_auto_process(project_id, auth_header))
+    return {"status": "processing", "message": "Detecting speakers & translating. You can change voices before generating audio."}
+
+async def _run_auto_process(project_id, auth_header):
+    """Run auto-process with queue lock (one at a time)."""
+    import time as _time
+    async with queue_lock:
+        queue_status[project_id] = {"position": 0, "status": "processing", "step": "starting", "progress": 0, "total": 2, "started_at": _time.time()}
+        project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
         try:
             # Step 1: Transcribe + Detect Speakers (if not done)
             if project.get("status") in ["created", "uploaded"]:
@@ -3098,16 +3180,13 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
             # Step 2: Translate (if not done)
             if project.get("status") == "transcribed":
                 queue_status[project_id].update({"step": "translating", "progress": 1, "total": 2})
-                await translate_segments(project_id, target_language=target_language, authorization=auth_header)
+                await translate_segments(project_id, target_language=project.get("target_language", "km"), authorization=auth_header)
                 project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
             
             # STOP HERE - let user review voices before generating audio
-            # Wait briefly for background role+gender detection to finish
             import asyncio as _asyncio
             await _asyncio.sleep(3)
-            # Re-read project with latest actors (GPT may have updated genders)
             project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
-            # Status is now "translated" - user can change voices then call /generate-audio
             queue_status[project_id] = {"position": 0, "status": "done", "step": "voices_ready"}
             
         except Exception as e:
@@ -3117,9 +3196,6 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
                 {"project_id": project_id},
                 {"$set": {"status": "error", "updated_at": datetime.now(timezone.utc).isoformat()}}
             )
-    
-    asyncio.create_task(_auto_process_background())
-    return {"status": "processing", "message": "Detecting speakers & translating. You can change voices before generating audio."}
 
 # ============================================================
 # TOOLS API ENDPOINTS (standalone video/audio tools)

@@ -27,9 +27,10 @@ export const StepProgress = ({ currentStep, steps, isDark }) => {
 export const ProcessingOverlay = ({ message, isDark, progressInfo, onClose }) => {
   const d = isDark;
   const fmtTime = (s) => { if (!s || s <= 0) return ""; const m = Math.floor(s / 60); const sec = Math.round(s % 60); return m > 0 ? `${m}m ${sec}s` : `${sec}s`; };
-  const stepLabels = { transcribing: "Detecting Speakers", translating: "Translating", generating_audio: "Generating Audio", generating_video: "Merging Video", starting: "Starting...", removing_vocals: "Removing Human Voice (AI)", mixing_audio: "Mixing Background Music", voices_ready: "Done! Review voices below." };
+  const stepLabels = { transcribing: "Detecting Speakers", translating: "Translating", generating_audio: "Generating Audio", generating_video: "Merging Video", starting: "Starting...", removing_vocals: "Removing Human Voice (AI)", mixing_audio: "Mixing Background Music", voices_ready: "Done! Review voices below.", waiting: "In Queue — Please Wait" };
   const isDone = progressInfo?.status === 'done' || progressInfo?.step === 'voices_ready';
   const isError = progressInfo?.status === 'error' || progressInfo?.step === 'error';
+  const isQueued = progressInfo?.status === 'queued' || progressInfo?.step === 'waiting';
   const showCloseBtn = isDone || isError;
   
   return (
@@ -40,16 +41,22 @@ export const ProcessingOverlay = ({ message, isDark, progressInfo, onClose }) =>
         <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`border rounded-sm p-8 text-center max-w-sm w-full mx-4 shadow-xl ${d?'bg-zinc-900 border-zinc-700':'bg-white border-black/10'}`}>
           <div className="relative w-16 h-16 mx-auto mb-5">
             <div className={`absolute inset-0 rounded-sm border-2 ${d?'border-zinc-700':'border-zinc-200'}`} />
-            {!showCloseBtn && <div className="absolute inset-0 rounded-sm border-2 border-transparent border-t-cyan-400 animate-spin" />}
+            {!showCloseBtn && <div className={`absolute inset-0 rounded-sm border-2 border-transparent ${isQueued ? 'border-t-amber-400' : 'border-t-cyan-400'} animate-spin`} />}
             {isError && <div className="absolute inset-0 rounded-sm border-2 border-red-500" />}
             {isDone && <div className="absolute inset-0 rounded-sm border-2 border-emerald-500" />}
-            <div className={`absolute inset-2 rounded-sm flex items-center justify-center ${isError ? 'bg-red-500/10' : isDone ? 'bg-emerald-500/10' : 'bg-cyan-500/5'}`}>
+            <div className={`absolute inset-2 rounded-sm flex items-center justify-center ${isError ? 'bg-red-500/10' : isDone ? 'bg-emerald-500/10' : isQueued ? 'bg-amber-500/5' : 'bg-cyan-500/5'}`}>
               <Waveform className={`w-6 h-6 ${isError ? 'text-red-400' : isDone ? 'text-emerald-400' : d?'text-zinc-300':'text-zinc-700'}`} />
             </div>
           </div>
-          <p className={`font-medium text-sm mb-1 ${isError ? 'text-red-400' : isDone ? (d?'text-emerald-400':'text-emerald-600') : d?'text-white':'text-zinc-950'}`}>
+          <p className={`font-medium text-sm mb-1 ${isError ? 'text-red-400' : isDone ? (d?'text-emerald-400':'text-emerald-600') : isQueued ? (d?'text-amber-400':'text-amber-600') : d?'text-white':'text-zinc-950'}`}>
             {isError ? "Error" : progressInfo?.step ? (stepLabels[progressInfo.step] || progressInfo.step) : "Processing"}
           </p>
+          {isQueued && progressInfo?.position > 0 && (
+            <div className={`mb-3 py-2 px-4 rounded-lg ${d?'bg-amber-500/10 border border-amber-500/20':'bg-amber-50 border border-amber-200'}`}>
+              <p className={`text-lg font-bold ${d?'text-amber-400':'text-amber-600'}`}>#{progressInfo.position}</p>
+              <p className={`text-[10px] ${d?'text-amber-400/60':'text-amber-500'}`}>in queue. Will start automatically.</p>
+            </div>
+          )}
           <p className="text-zinc-500 text-xs mb-4">{message}</p>
           
           {!showCloseBtn && progressInfo?.total > 0 && progressInfo?.progress > 0 && (
