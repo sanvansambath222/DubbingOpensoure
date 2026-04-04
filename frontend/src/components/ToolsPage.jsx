@@ -828,37 +828,41 @@ const ToolsPage = () => {
                     data-testid={`tool-card-${tool.id}`}
                     className={`${tool.span} group relative p-6 rounded-2xl border text-left transition-all duration-300 overflow-hidden
                       ${d ? 'bg-zinc-900/50 backdrop-blur border-zinc-800/60 hover:border-zinc-600' 
-                          : 'bg-white border-zinc-200/80 hover:border-zinc-300 shadow-sm hover:shadow-xl hover:shadow-zinc-200/40'}`}
+                          : `bg-gradient-to-br ${c.gradient} bg-opacity-5 border-transparent shadow-md hover:shadow-xl`}`}
+                    style={!d ? { background: `linear-gradient(135deg, white 0%, white 60%, ${tool.accent === 'cyan' ? '#ecfeff' : tool.accent === 'violet' ? '#f5f3ff' : tool.accent === 'sky' ? '#f0f9ff' : tool.accent === 'amber' ? '#fffbeb' : tool.accent === 'teal' ? '#f0fdfa' : tool.accent === 'emerald' ? '#ecfdf5' : tool.accent === 'blue' ? '#eff6ff' : tool.accent === 'orange' ? '#fff7ed' : '#fdf2f8'} 100%)` } : {}}
                   >
+                    {/* Colored top stripe */}
+                    {!d && <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${c.gradient}`} />}
+
                     {/* Gradient glow on hover */}
                     <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none`}
-                      style={{background: d ? `radial-gradient(ellipse at 20% 20%, var(--glow-color, rgba(6,182,212,0.08)), transparent 60%)` : `radial-gradient(ellipse at 20% 20%, var(--glow-color, rgba(139,92,246,0.04)), transparent 60%)`}} />
+                      style={{background: d ? `radial-gradient(ellipse at 20% 20%, var(--glow-color, rgba(6,182,212,0.08)), transparent 60%)` : `radial-gradient(ellipse at 80% 80%, var(--glow-color, rgba(139,92,246,0.08)), transparent 60%)`}} />
 
                     <div className="relative z-10 flex flex-col justify-between h-full">
                       <div className="flex items-start justify-between">
                         <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110
-                          ${d ? `bg-gradient-to-br ${c.gradient} shadow-lg` : `${c.bg10} border ${c.border}`}`}>
+                          ${d ? `bg-gradient-to-br ${c.gradient} shadow-lg` : `bg-white shadow-md border border-white/80`}`}>
                           <tool.icon className={`w-5.5 h-5.5 ${d ? 'text-white' : c.textL}`} weight="duotone" />
                         </div>
                         <div className="flex items-center gap-2">
                           {tool.tag && (
                             <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold tracking-[0.12em] uppercase
-                              ${d ? `${c.bg10} ${c.text} border ${c.border}` : `${c.bg10} ${c.textL} border ${c.border}`}`}>
+                              ${d ? `${c.bg10} ${c.text} border ${c.border}` : `bg-white/80 ${c.textL} shadow-sm`}`}>
                               {tool.tag}
                             </span>
                           )}
                           <ArrowRight className={`w-4 h-4 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-[-4px] group-hover:translate-x-0
-                            ${d?'text-zinc-400':'text-zinc-400'}`} weight="bold" />
+                            ${d?'text-zinc-400':'text-zinc-500'}`} weight="bold" />
                         </div>
                       </div>
                       <div>
-                        <div className={`text-base font-semibold tracking-tight ${d?'text-zinc-100':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{tool.name}</div>
+                        <div className={`text-base font-semibold tracking-tight ${d?'text-zinc-100':'text-zinc-800'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{tool.name}</div>
                         <div className={`text-xs mt-0.5 leading-relaxed ${d?'text-zinc-500':'text-zinc-500'}`}>{tool.desc}</div>
                       </div>
                     </div>
 
                     {/* Bottom accent bar */}
-                    <div className={`absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r ${c.gradient} opacity-0 group-hover:opacity-100 transition-all duration-300`} />
+                    <div className={`absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r ${c.gradient} ${d ? 'opacity-0 group-hover:opacity-100' : 'opacity-40 group-hover:opacity-100'} transition-all duration-300`} />
                   </motion.button>
                 );
               })}
