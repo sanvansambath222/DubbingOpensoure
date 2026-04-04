@@ -93,8 +93,12 @@ const TelegramConnect = ({ token, isDark }) => {
               </div>
               <div className="space-y-3">
                 <p className={`text-xs ${d?'text-zinc-400':'text-zinc-600'}`}>
-                  1. Open Telegram and click: <a href="https://t.me/VoxiDub_bot" target="_blank" rel="noreferrer" className="text-sky-500 underline font-bold">@VoxiDub_bot</a>
+                  1. Click the button below to open the bot:
                 </p>
+                <a href="https://t.me/VoxiDub_bot" target="_blank" rel="noreferrer" data-testid="open-telegram-bot"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-sm text-sm font-semibold bg-sky-500 text-white hover:bg-sky-400 transition-colors">
+                  <TelegramLogo className="w-5 h-5" weight="fill" /> Open @VoxiDub_bot
+                </a>
                 <p className={`text-xs ${d?'text-zinc-400':'text-zinc-600'}`}>
                   2. Click <strong>Start</strong> in the bot
                 </p>
