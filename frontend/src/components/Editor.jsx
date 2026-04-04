@@ -527,8 +527,8 @@ const Editor = () => {
           await new Promise(res => setTimeout(res, 3000));
           try {
             const proj = await axios.get(`${API}/projects/${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
-            // Stop when translated (Phase 1 done) or error
-            if (proj.data.status === "translated" || proj.data.status === "error") {
+            // Stop when translated, voices_ready, or error (Phase 1 done)
+            if (proj.data.status === "translated" || proj.data.status === "voices_ready" || proj.data.status === "error") {
               // Wait for GPT role/gender detection to finish (runs in background)
               await new Promise(res => setTimeout(res, 3000));
               const latest = await axios.get(`${API}/projects/${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -641,7 +641,7 @@ const Editor = () => {
 
   return (
     <div className={`min-h-screen flex flex-col ${d?'bg-zinc-950':'bg-zinc-50'}`} data-testid="editor-page" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
-      <ProcessingOverlay message={processingMsg} isDark={d} progressInfo={progressInfo} />
+      <ProcessingOverlay message={processingMsg} isDark={d} progressInfo={progressInfo} onClose={() => { setProcessingMsg(null); stopProgressPoll(); }} />
 
       {/* Header */}
       <header className={`px-4 py-2.5 flex items-center justify-between shadow-sm border-b ${d?'bg-zinc-900 border-zinc-800':'bg-white border-black/10'}`}>

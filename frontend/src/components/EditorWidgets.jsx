@@ -24,10 +24,10 @@ export const StepProgress = ({ currentStep, steps, isDark }) => {
   );
 };
 
-export const ProcessingOverlay = ({ message, isDark, progressInfo }) => {
+export const ProcessingOverlay = ({ message, isDark, progressInfo, onClose }) => {
   const d = isDark;
   const fmtTime = (s) => { if (!s || s <= 0) return ""; const m = Math.floor(s / 60); const sec = Math.round(s % 60); return m > 0 ? `${m}m ${sec}s` : `${sec}s`; };
-  const stepLabels = { transcribing: "Detecting Speakers", translating: "Translating", generating_audio: "Generating Audio", generating_video: "Merging Video", starting: "Starting...", removing_vocals: "Removing Human Voice (AI)", mixing_audio: "Mixing Background Music" };
+  const stepLabels = { transcribing: "Detecting Speakers", translating: "Translating", generating_audio: "Generating Audio", generating_video: "Merging Video", starting: "Starting...", removing_vocals: "Removing Human Voice (AI)", mixing_audio: "Mixing Background Music", voices_ready: "Done! Review voices below." };
   return (
   <AnimatePresence>
     {message && (
@@ -72,6 +72,12 @@ export const ProcessingOverlay = ({ message, isDark, progressInfo }) => {
                 <p className="text-[9px] text-zinc-400 mt-1">Audio: {Math.round(progressInfo.demucs_duration)}s total</p>
               )}
             </div>
+          )}
+          {progressInfo?.step === 'voices_ready' && onClose && (
+            <button onClick={onClose} data-testid="processing-done-btn"
+              className={`mt-4 px-6 py-2 rounded-sm text-sm font-semibold transition-colors ${d?'bg-cyan-600 text-white hover:bg-cyan-500':'bg-zinc-950 text-white hover:bg-zinc-800'}`}>
+              Done — Review Voices
+            </button>
           )}
         </motion.div>
       </motion.div>
