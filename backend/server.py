@@ -823,7 +823,7 @@ async def send_telegram_video(chat_id: int, video_path: str, caption: str = "", 
         
         if final_size > 49 * 1024 * 1024:
             site_url = os.environ.get("SITE_URL", "https://voxidub.com")
-            msg = f"Your dubbed video is ready! ({file_size//(1024*1024)}MB)\n\nDownload: {site_url}/dashboard\n\nPowered by VoxiDub.AI"
+            msg = f"Your dubbed video is ready! ({file_size//(1024*1024)}MB)\n\nFile too large for Telegram. Download from:\n{site_url}/dashboard\n\nvoxidub.com — AI Video Dubbing"
             await send_telegram_message(chat_id, msg)
             if compressed and send_path != video_path and os.path.exists(send_path):
                 os.unlink(send_path)
@@ -2570,7 +2570,23 @@ async def generate_video(project_id: str, burn_subtitles: bool = Query(False), a
                 local_path = str(LOCAL_STORAGE_DIR / result["path"])
                 project_doc = await db.projects.find_one({"project_id": project_id})
                 title = project_doc.get("title", "Untitled") if project_doc else "Untitled"
-                caption = f"Your dubbed video is ready!\nProject: {title}\n\nPowered by VoxiDub.AI"
+                source_lang = ""
+                target_lang = ""
+                if project_doc:
+                    src = project_doc.get("detected_language", "")
+                    tgt = project_doc.get("target_language", "")
+                    if src:
+                        source_lang = LANGUAGE_NAMES.get(src, src)
+                    if tgt:
+                        target_lang = LANGUAGE_NAMES.get(tgt, tgt)
+                
+                lang_line = ""
+                if source_lang and target_lang:
+                    lang_line = f"\n{source_lang} → {target_lang}"
+                elif target_lang:
+                    lang_line = f"\nDubbed to {target_lang}"
+                
+                caption = f"Your dubbed video is ready!\n\nProject: {title}{lang_line}\n\nvoxidub.com — AI Video Dubbing"
                 sent = await send_telegram_video(tg_chat_id, local_path, caption)
                 if sent:
                     logger.info(f"Telegram: sent video to chat_id={tg_chat_id} for project={project_id}")
