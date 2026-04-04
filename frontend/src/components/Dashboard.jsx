@@ -12,7 +12,7 @@ import { useAuth, ThemeToggle } from "./AuthContext";
 import { API } from "./constants";
 
 // Telegram connect component
-const TelegramConnect = ({ token, isDark }) => {
+const TelegramConnect = ({ token, isDark, onStatusChange }) => {
   const d = isDark;
   const [status, setStatus] = useState(null);
   const [code, setCode] = useState(null);
@@ -23,8 +23,9 @@ const TelegramConnect = ({ token, isDark }) => {
     try {
       const r = await axios.get(`${API}/telegram/status`, { headers: { Authorization: `Bearer ${token}` } });
       setStatus(r.data);
+      if (onStatusChange) onStatusChange(r.data);
     } catch {}
-  }, [token]);
+  }, [token, onStatusChange]);
 
   useEffect(() => { checkStatus(); }, [checkStatus]);
 
@@ -60,6 +61,7 @@ const TelegramConnect = ({ token, isDark }) => {
       if (r.data.linked) {
         setStatus(r.data);
         setShowModal(false);
+        if (onStatusChange) onStatusChange(r.data);
         toast.success("Telegram connected!");
       }
     }, 3000);
@@ -153,6 +155,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [telegramLinked, setTelegramLinked] = useState(null);
 
   const fetchProjects = useCallback(async () => {
     try { const r = await axios.get(`${API}/projects`, { headers: { Authorization: `Bearer ${token}` } }); setProjects(r.data); }
@@ -230,7 +233,7 @@ const Dashboard = () => {
             <span className={`text-xl font-bold tracking-tight ${d?'text-white':'text-zinc-950'}`} style={{fontFamily:"'Outfit',sans-serif"}}>VoxiDub.AI</span>
           </div>
           <div className="flex items-center gap-3">
-            <TelegramConnect token={token} isDark={d} />
+            <TelegramConnect token={token} isDark={d} onStatusChange={(s) => setTelegramLinked(s?.linked)} />
             <ThemeToggle />
             <span className={`text-xs ${d?'text-zinc-500':'text-zinc-400'}`}>{user?.email}</span>
             <button onClick={logout} data-testid="logout-btn"
@@ -242,6 +245,18 @@ const Dashboard = () => {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-10">
+        {/* Telegram connection warning */}
+        {telegramLinked === false && (
+          <div data-testid="telegram-warning" className={`mb-6 p-4 rounded-sm border flex items-start gap-3 ${d?'bg-amber-950/30 border-amber-800 text-amber-300':'bg-amber-50 border-amber-200 text-amber-800'}`}>
+            <TelegramLogo className="w-6 h-6 flex-shrink-0 mt-0.5" weight="fill" />
+            <div>
+              <p className="font-semibold text-sm">Connect Telegram to receive your videos</p>
+              <p className={`text-xs mt-1 ${d?'text-amber-400/70':'text-amber-600'}`}>
+                Videos are not stored on this website. After dubbing, your video will be sent to your Telegram. Please connect Telegram first.
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-8">
           <h1 className={`text-2xl font-semibold ${d?'text-white':'text-zinc-950'}`} style={{ fontFamily: "'Outfit', sans-serif" }}>Your Projects</h1>
           <div className="flex items-center gap-2">
