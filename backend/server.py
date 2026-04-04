@@ -3215,6 +3215,52 @@ async def tool_add_logo(video: UploadFile = File(...), logo: UploadFile = File(.
             raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
     return {"download_url": f"/api/tools/download/{out_name}"}
 
+# ===== License System (for Desktop .exe) =====
+class LicenseCheckReq(BaseModel):
+    license_key: str
+    machine_id: str
+
+class LicenseActivateReq(BaseModel):
+    license_key: str
+    machine_id: str
+
+@api_router.post("/license/check")
+async def check_license(req: LicenseCheckReq):
+    lic = await db.licenses.find_one({"key": req.license_key}, {"_id": 0})
+    if not lic:
+        raise HTTPException(status_code=404, detail="Invalid license key")
+    if lic.get("machine_id") and lic["machine_id"] != req.machine_id:
+        raise HTTPException(status_code=403, detail="License is tied to another machine")
+    if lic.get("expiry"):
+        expiry = datetime.fromisoformat(lic["expiry"])
+        if expiry < datetime.now(timezone.utc):
+            raise HTTPException(status_code=403, detail="License expired")
+    return {"valid": True, "plan": lic.get("plan", "pro"), "expiry": lic.get("expiry")}
+
+@api_router.post("/license/activate")
+async def activate_license(req: LicenseActivateReq):
+    lic = await db.licenses.find_one({"key": req.license_key}, {"_id": 0})
+    if not lic:
+        raise HTTPException(status_code=404, detail="Invalid license key")
+    if lic.get("machine_id") and lic["machine_id"] != req.machine_id:
+        raise HTTPException(status_code=403, detail="License already used on another machine")
+    await db.licenses.update_one(
+        {"key": req.license_key},
+        {"$set": {"machine_id": req.machine_id, "activated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"success": True, "plan": lic.get("plan", "pro"), "expiry": lic.get("expiry")}
+
+@api_router.post("/license/generate")
+async def generate_license(authorization: str = Header(None)):
+    user = await get_current_user(authorization)
+    if user.email != "test@voxidub.com":
+        raise HTTPException(status_code=403, detail="Admin only")
+    from datetime import timedelta
+    key = f"VXD-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:4].upper()}"
+    expiry = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    await db.licenses.insert_one({"key": key, "plan": "pro", "expiry": expiry, "machine_id": None, "created_at": datetime.now(timezone.utc).isoformat()})
+    return {"key": key, "expiry": expiry}
+
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
