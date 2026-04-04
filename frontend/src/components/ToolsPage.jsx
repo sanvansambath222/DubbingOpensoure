@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Subtitles, Translate, Scissors, FilmSlate, SpeakerHigh,
   ArrowsOut, ArrowsClockwise, ArrowLeft, UploadSimple, DownloadSimple,
   SpinnerGap, MicrophoneStage, Waveform, Image as ImageIcon,
-  CloudArrowUp, File, FileAudio, FileVideo, X, Check, Info, CaretDown
+  CloudArrowUp, File, FileAudio, FileVideo, X, Check, Info, CaretDown,
+  Lightning, Play, ArrowRight
 } from "@phosphor-icons/react";
 import { useAuth, ThemeToggle } from "./AuthContext";
 import { API } from "./constants";
@@ -30,32 +31,32 @@ const LANG_NAMES = {
 };
 
 const TOOLS = [
-  { id: "voice-replace", name: "Voice Replace", desc: "Remove voice, rewrite text, generate new voice", icon: Waveform, accent: "cyan", tag: "AI", span: "col-span-1 md:col-span-2 row-span-2" },
-  { id: "subtitles", name: "Add Subtitles", desc: "Burn subtitles into video", icon: Subtitles, accent: "violet", tag: null, span: "col-span-1 md:col-span-2 row-span-1" },
-  { id: "translate", name: "Translate", desc: "Translate text or SRT file", icon: Translate, accent: "sky", tag: "AI", span: "col-span-1 row-span-1" },
-  { id: "trim", name: "Trim Video", desc: "Cut video by time range", icon: Scissors, accent: "amber", tag: null, span: "col-span-1 row-span-1" },
-  { id: "ai-clips", name: "AI Clips", desc: "Auto-create short clips from long video", icon: FilmSlate, accent: "teal", tag: "AI", span: "col-span-1 md:col-span-2 row-span-1" },
-  { id: "tts", name: "Text to Speech", desc: "Type text, get audio in any language", icon: SpeakerHigh, accent: "emerald", tag: null, span: "col-span-1 row-span-1" },
-  { id: "resize", name: "Resize Video", desc: "Change video dimensions", icon: ArrowsOut, accent: "blue", tag: null, span: "col-span-1 row-span-1" },
-  { id: "convert", name: "Convert", desc: "Change video/audio format", icon: ArrowsClockwise, accent: "orange", tag: null, span: "col-span-1 md:col-span-2 row-span-1" },
-  { id: "add-logo", name: "Add Logo", desc: "Overlay logo/watermark on video", icon: ImageIcon, accent: "pink", tag: null, span: "col-span-1 md:col-span-2 row-span-1" },
+  { id: "voice-replace", name: "Voice Replace", desc: "AI-powered voice removal, transcription & new voice generation", icon: Waveform, accent: "cyan", tag: "AI", span: "md:col-span-2 md:row-span-2" },
+  { id: "subtitles", name: "Add Subtitles", desc: "Burn professional subtitles into any video with custom styling", icon: Subtitles, accent: "violet", tag: null, span: "md:col-span-2" },
+  { id: "translate", name: "Translate", desc: "AI translation for text & SRT files", icon: Translate, accent: "sky", tag: "AI", span: "" },
+  { id: "trim", name: "Trim Video", desc: "Precise time-based video cutting", icon: Scissors, accent: "amber", tag: null, span: "" },
+  { id: "ai-clips", name: "AI Clips", desc: "Automatically generate viral short clips from long videos", icon: FilmSlate, accent: "teal", tag: "AI", span: "md:col-span-2" },
+  { id: "tts", name: "Text to Speech", desc: "322+ voices across 75 languages", icon: SpeakerHigh, accent: "emerald", tag: null, span: "" },
+  { id: "resize", name: "Resize Video", desc: "TikTok, Reels, YouTube formats", icon: ArrowsOut, accent: "blue", tag: null, span: "" },
+  { id: "convert", name: "Convert", desc: "MP4, MOV, AVI, MP3, WAV and more format conversions", icon: ArrowsClockwise, accent: "orange", tag: null, span: "md:col-span-2" },
+  { id: "add-logo", name: "Add Logo", desc: "Drag & drop watermark overlay with position control", icon: ImageIcon, accent: "pink", tag: null, span: "md:col-span-2" },
 ];
 
-// Accent color helpers
-const ACCENT_COLORS = {
-  cyan: { bg: "bg-cyan-500", text: "text-cyan-400", textLight: "text-cyan-600", border: "border-cyan-500/30", glow: "bg-cyan-500/10", gradient: "from-cyan-500 to-cyan-600" },
-  violet: { bg: "bg-violet-500", text: "text-violet-400", textLight: "text-violet-600", border: "border-violet-500/30", glow: "bg-violet-500/10", gradient: "from-violet-500 to-purple-600" },
-  sky: { bg: "bg-sky-500", text: "text-sky-400", textLight: "text-sky-600", border: "border-sky-500/30", glow: "bg-sky-500/10", gradient: "from-sky-500 to-blue-600" },
-  amber: { bg: "bg-amber-500", text: "text-amber-400", textLight: "text-amber-600", border: "border-amber-500/30", glow: "bg-amber-500/10", gradient: "from-amber-500 to-orange-600" },
-  teal: { bg: "bg-teal-500", text: "text-teal-400", textLight: "text-teal-600", border: "border-teal-500/30", glow: "bg-teal-500/10", gradient: "from-teal-500 to-cyan-600" },
-  emerald: { bg: "bg-emerald-500", text: "text-emerald-400", textLight: "text-emerald-600", border: "border-emerald-500/30", glow: "bg-emerald-500/10", gradient: "from-emerald-500 to-green-600" },
-  blue: { bg: "bg-blue-500", text: "text-blue-400", textLight: "text-blue-600", border: "border-blue-500/30", glow: "bg-blue-500/10", gradient: "from-blue-500 to-indigo-600" },
-  orange: { bg: "bg-orange-500", text: "text-orange-400", textLight: "text-orange-600", border: "border-orange-500/30", glow: "bg-orange-500/10", gradient: "from-orange-500 to-red-600" },
-  pink: { bg: "bg-pink-500", text: "text-pink-400", textLight: "text-pink-600", border: "border-pink-500/30", glow: "bg-pink-500/10", gradient: "from-pink-500 to-rose-600" },
-  rose: { bg: "bg-rose-500", text: "text-rose-400", textLight: "text-rose-600", border: "border-rose-500/30", glow: "bg-rose-500/10", gradient: "from-rose-500 to-pink-600" },
+// Accent color system
+const AC = {
+  cyan:    { bg: "bg-cyan-500",    bg10: "bg-cyan-500/10",    bg20: "bg-cyan-500/20",    text: "text-cyan-400",    textL: "text-cyan-600",    border: "border-cyan-500/20",    ring: "ring-cyan-500/30",    gradient: "from-cyan-500 to-cyan-600" },
+  violet:  { bg: "bg-violet-500",  bg10: "bg-violet-500/10",  bg20: "bg-violet-500/20",  text: "text-violet-400",  textL: "text-violet-600",  border: "border-violet-500/20",  ring: "ring-violet-500/30",  gradient: "from-violet-500 to-purple-600" },
+  sky:     { bg: "bg-sky-500",     bg10: "bg-sky-500/10",     bg20: "bg-sky-500/20",     text: "text-sky-400",     textL: "text-sky-600",     border: "border-sky-500/20",     ring: "ring-sky-500/30",     gradient: "from-sky-500 to-blue-600" },
+  amber:   { bg: "bg-amber-500",   bg10: "bg-amber-500/10",   bg20: "bg-amber-500/20",   text: "text-amber-400",   textL: "text-amber-600",   border: "border-amber-500/20",   ring: "ring-amber-500/30",   gradient: "from-amber-500 to-orange-600" },
+  teal:    { bg: "bg-teal-500",    bg10: "bg-teal-500/10",    bg20: "bg-teal-500/20",    text: "text-teal-400",    textL: "text-teal-600",    border: "border-teal-500/20",    ring: "ring-teal-500/30",    gradient: "from-teal-500 to-cyan-600" },
+  emerald: { bg: "bg-emerald-500", bg10: "bg-emerald-500/10", bg20: "bg-emerald-500/20", text: "text-emerald-400", textL: "text-emerald-600", border: "border-emerald-500/20", ring: "ring-emerald-500/30", gradient: "from-emerald-500 to-green-600" },
+  blue:    { bg: "bg-blue-500",    bg10: "bg-blue-500/10",    bg20: "bg-blue-500/20",    text: "text-blue-400",    textL: "text-blue-600",    border: "border-blue-500/20",    ring: "ring-blue-500/30",    gradient: "from-blue-500 to-indigo-600" },
+  orange:  { bg: "bg-orange-500",  bg10: "bg-orange-500/10",  bg20: "bg-orange-500/20",  text: "text-orange-400",  textL: "text-orange-600",  border: "border-orange-500/20",  ring: "ring-orange-500/30",  gradient: "from-orange-500 to-red-600" },
+  pink:    { bg: "bg-pink-500",    bg10: "bg-pink-500/10",    bg20: "bg-pink-500/20",    text: "text-pink-400",    textL: "text-pink-600",    border: "border-pink-500/20",    ring: "ring-pink-500/30",    gradient: "from-pink-500 to-rose-600" },
 };
 
-// Shared file drop zone
+// --- Shared UI Components ---
+
 const DropZone = ({ accept, label, icon: Icon, file, onFile, d }) => {
   const ref = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -66,54 +67,65 @@ const DropZone = ({ accept, label, icon: Icon, file, onFile, d }) => {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
       onClick={() => ref.current?.click()}
-      className={`relative cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-all ${dragging ? (d?'border-white/40 bg-white/5':'border-zinc-400 bg-zinc-50') : file ? (d?'border-emerald-500/40 bg-emerald-900/10':'border-emerald-400 bg-emerald-50') : (d?'border-zinc-700 hover:border-zinc-500':'border-zinc-300 hover:border-zinc-400')}`}
+      className={`relative cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all duration-200
+        ${dragging ? (d?'border-cyan-400/60 bg-cyan-500/5':'border-cyan-500/60 bg-cyan-50') 
+        : file ? (d?'border-emerald-500/40 bg-emerald-500/5':'border-emerald-400/60 bg-emerald-50/50') 
+        : (d?'border-zinc-700/80 hover:border-zinc-500/80 bg-zinc-800/30':'border-zinc-300 hover:border-zinc-400 bg-zinc-50/50')}`}
       data-testid={`drop-${label.toLowerCase().replace(/\s/g,'-')}`}
     >
       <input ref={ref} type="file" accept={accept} className="hidden" onChange={e => { if(e.target.files[0]) onFile(e.target.files[0]); }} />
       {file ? (
-        <div className="flex items-center justify-center gap-2">
-          <Check className="w-4 h-4 text-emerald-500" />
-          <span className={`text-sm truncate max-w-[200px] ${d?'text-emerald-400':'text-emerald-600'}`}>{file.name}</span>
-          <button onClick={(e) => { e.stopPropagation(); onFile(null); }} className="ml-1"><X className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" /></button>
+        <div className="flex items-center justify-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${d?'bg-emerald-500/10':'bg-emerald-100'}`}>
+            <Check className="w-4 h-4 text-emerald-500" weight="bold" />
+          </div>
+          <span className={`text-sm font-medium truncate max-w-[240px] ${d?'text-emerald-400':'text-emerald-700'}`}>{file.name}</span>
+          <button onClick={(e) => { e.stopPropagation(); onFile(null); }} className={`ml-1 p-1 rounded-lg transition-colors ${d?'hover:bg-red-500/10':'hover:bg-red-50'}`}>
+            <X className="w-3.5 h-3.5 text-zinc-400 hover:text-red-400" />
+          </button>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-1.5">
-          <Icon className={`w-6 h-6 ${d?'text-zinc-500':'text-zinc-400'}`} />
-          <span className={`text-xs ${d?'text-zinc-500':'text-zinc-500'}`}>{label}</span>
-          <span className={`text-[10px] ${d?'text-zinc-600':'text-zinc-400'}`}>Click or drag file here</span>
+        <div className="flex flex-col items-center gap-2">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${d?'bg-zinc-700/50':'bg-zinc-200/60'}`}>
+            <Icon className={`w-5 h-5 ${d?'text-zinc-400':'text-zinc-500'}`} weight="duotone" />
+          </div>
+          <span className={`text-sm font-medium ${d?'text-zinc-300':'text-zinc-600'}`}>{label}</span>
+          <span className={`text-xs ${d?'text-zinc-600':'text-zinc-400'}`}>Click or drag file here</span>
         </div>
       )}
     </div>
   );
 };
 
-// Shared select
 const Select = ({ label, value, onChange, options, d }) => (
   <div>
-    {label && <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>{label}</label>}
+    {label && <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>{label}</label>}
     <div className="relative">
       <select value={value} onChange={e => onChange(e.target.value)}
-        className={`w-full text-sm p-2.5 pr-8 rounded-lg border appearance-none transition-colors ${d?'bg-zinc-800/80 border-zinc-700 text-white hover:border-zinc-500 focus:border-zinc-400':'bg-white border-zinc-300 text-zinc-800 hover:border-zinc-400 focus:border-zinc-500'} outline-none`}>
+        className={`w-full text-sm p-3 pr-9 rounded-xl border appearance-none transition-all duration-200 focus:ring-2 
+          ${d?'bg-zinc-800/80 border-zinc-700/80 text-white hover:border-zinc-600 focus:border-zinc-500 focus:ring-white/5'
+            :'bg-white border-zinc-300 text-zinc-800 hover:border-zinc-400 focus:border-zinc-500 focus:ring-zinc-200'} outline-none`}>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      <CaretDown className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${d?'text-zinc-500':'text-zinc-400'}`} />
+      <CaretDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${d?'text-zinc-500':'text-zinc-400'}`} />
     </div>
   </div>
 );
 
-// Shared process button
 const ProcessBtn = ({ onClick, processing, label, procLabel, color, d }) => (
   <button onClick={onClick} disabled={processing} data-testid={`process-btn-${label.toLowerCase().replace(/\s/g,'-')}`}
-    className={`w-full py-3 rounded-lg font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-[0.98] ${d ? 'bg-white text-zinc-950 hover:bg-zinc-200' : `bg-gradient-to-r ${color} text-white hover:opacity-90`}`}>
-    {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" />{procLabel || "Processing..."}</> : label}
+    className={`w-full py-3.5 rounded-xl font-bold text-sm tracking-wide transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5 active:scale-[0.98] shadow-lg
+      ${d ? 'bg-white text-zinc-950 hover:bg-zinc-100 shadow-white/5' 
+          : `bg-gradient-to-r ${color} text-white hover:shadow-xl`}`}>
+    {processing ? <><SpinnerGap className="w-4 h-4 animate-spin" />{procLabel || "Processing..."}</> : <><Lightning className="w-4 h-4" weight="fill" />{label}</>}
   </button>
 );
 
-// Shared download button
 const DownloadBtn = ({ url, label, d }) => (
   <a href={url.startsWith("http") ? url : `${API.replace('/api','')}${url}`} download
-    className={`block w-full py-2.5 rounded-lg text-sm font-semibold text-center transition-all ${d?'bg-emerald-600 hover:bg-emerald-500 text-white':'bg-emerald-500 hover:bg-emerald-600 text-white'}`} data-testid="download-btn">
-    <DownloadSimple className="w-4 h-4 inline mr-1.5" />{label || "Download"}
+    className={`block w-full py-3 rounded-xl text-sm font-bold text-center transition-all duration-200 shadow-md
+      ${d?'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20':'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'}`} data-testid="download-btn">
+    <DownloadSimple className="w-4 h-4 inline mr-2" weight="bold" />{label || "Download"}
   </a>
 );
 
@@ -178,19 +190,27 @@ const VoiceReplaceTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <DropZone accept="video/*,audio/*" label="Upload Video or Audio" icon={FileVideo} file={video} onFile={setVideo} d={d} />
-      <textarea value={extraText} onChange={e => setExtraText(e.target.value)} rows={3}
-        placeholder="Add extra text (optional) - will be added after the transcription..."
-        className={`w-full text-sm p-3 rounded-lg border resize-none transition-colors ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-zinc-500':'bg-white border-zinc-300 placeholder:text-zinc-400 focus:border-zinc-400'} outline-none`}
-        data-testid="voice-replace-extra-text" />
-      <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Extra Text (optional)</label>
+        <textarea value={extraText} onChange={e => setExtraText(e.target.value)} rows={3}
+          placeholder="Add text to include after transcription..."
+          className={`w-full text-sm p-3.5 rounded-xl border resize-none transition-all duration-200 focus:ring-2
+            ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-white/5'
+              :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-zinc-200'} outline-none`}
+          data-testid="voice-replace-extra-text" />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Voice</label>
-          <input type="text" placeholder="Search voice..." value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)}
-            className={`w-full text-xs p-2 rounded-lg border mb-1 ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} />
+          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Voice</label>
+          <input type="text" placeholder="Search voices..." value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)}
+            className={`w-full text-xs p-2.5 rounded-xl border mb-2 transition-all duration-200 focus:ring-2
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:ring-white/5'
+                :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} />
           <select value={voice} onChange={e => setVoice(e.target.value)}
-            className={`w-full text-xs p-2 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`}>
+            className={`w-full text-xs p-2.5 rounded-xl border transition-all duration-200
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white':'bg-white border-zinc-300'} outline-none`}>
             {filteredVoices.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
           </select>
         </div>
@@ -198,8 +218,8 @@ const VoiceReplaceTool = ({ token, d }) => {
           {value:"km",label:"Khmer"},{value:"en",label:"English"},{value:"zh",label:"Chinese"},{value:"th",label:"Thai"},{value:"vi",label:"Vietnamese"},{value:"ko",label:"Korean"},{value:"ja",label:"Japanese"}
         ]} d={d} />
       </div>
-      {progress && <div className={`text-xs text-center py-1 ${d?'text-zinc-400':'text-zinc-500'}`}>{progress}</div>}
-      <ProcessBtn onClick={handleProcess} processing={processing} label="Replace Voice" procLabel={progress || "Processing..."} color="from-rose-500 to-pink-600" d={d} />
+      {progress && <div className={`text-xs text-center py-2 rounded-lg ${d?'text-cyan-400 bg-cyan-500/5':'text-cyan-600 bg-cyan-50'}`}>{progress}</div>}
+      <ProcessBtn onClick={handleProcess} processing={processing} label="Replace Voice" procLabel={progress || "Processing..."} color="from-cyan-500 to-cyan-600" d={d} />
       {result && <DownloadBtn url={result} label="Download Result" d={d} />}
     </div>
   );
@@ -230,14 +250,17 @@ const SubtitlesTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
-      <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
-      <DropZone accept=".srt,.vtt,.ass" label="Upload SRT Subtitle" icon={File} file={srt} onFile={setSrt} d={d} />
-      <div className="grid grid-cols-3 gap-3">
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
+        <DropZone accept=".srt,.vtt,.ass" label="Upload SRT Subtitle" icon={File} file={srt} onFile={setSrt} d={d} />
+      </div>
+      <div className="grid grid-cols-3 gap-4">
         <div>
-          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Size</label>
+          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Font Size</label>
           <input type="number" value={fontSize} onChange={e => setFontSize(e.target.value)} min={12} max={72}
-            className={`w-full text-sm p-2.5 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
+            className={`w-full text-sm p-3 rounded-xl border transition-all duration-200 focus:ring-2
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
         </div>
         <Select label="Color" value={fontColor} onChange={setFontColor} options={[
           {value:"white",label:"White"},{value:"yellow",label:"Yellow"},{value:"green",label:"Green"},{value:"cyan",label:"Cyan"}
@@ -290,14 +313,22 @@ const TranslateTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <DropZone accept=".srt" label="Upload SRT File (optional)" icon={File} file={srt} onFile={setSrt} d={d} />
-      <div className={`flex items-center gap-2 ${d?'text-zinc-600':'text-zinc-400'}`}><div className="flex-1 h-px bg-current opacity-30" /><span className="text-[10px] uppercase tracking-wider">or type text</span><div className="flex-1 h-px bg-current opacity-30" /></div>
+      <div className={`flex items-center gap-3 ${d?'text-zinc-600':'text-zinc-300'}`}>
+        <div className="flex-1 h-px bg-current" /><span className={`text-[10px] uppercase tracking-[0.2em] font-bold ${d?'text-zinc-500':'text-zinc-400'}`}>or type text</span><div className="flex-1 h-px bg-current" />
+      </div>
       <textarea value={textInput} onChange={e => setTextInput(e.target.value)} rows={3} placeholder="Type text to translate..."
-        className={`w-full text-sm p-3 rounded-lg border resize-none ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} data-testid="translate-text-input" />
+        className={`w-full text-sm p-3.5 rounded-xl border resize-none transition-all duration-200 focus:ring-2
+          ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:ring-white/5'
+            :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} data-testid="translate-text-input" />
       <Select label="Target Language" value={targetLang} onChange={setTargetLang} options={langs} d={d} />
       <ProcessBtn onClick={handleTranslate} processing={processing} label="Translate" color="from-sky-500 to-blue-600" d={d} />
-      {translated && <div className={`p-3 rounded-lg border text-sm ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-gray-50 border-zinc-200'}`} data-testid="translate-result">{translated}</div>}
+      {translated && (
+        <div className={`p-4 rounded-xl border text-sm leading-relaxed ${d?'bg-zinc-800/60 border-zinc-700/50 text-zinc-200':'bg-sky-50 border-sky-200 text-zinc-800'}`} data-testid="translate-result">
+          {translated}
+        </div>
+      )}
       {result && <DownloadBtn url={result} label="Download SRT" d={d} />}
     </div>
   );
@@ -326,16 +357,17 @@ const TrimTool = ({ token, d }) => {
 
   const TimeInput = ({ label, value, onChange }) => (
     <div>
-      <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>{label}</label>
+      <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>{label}</label>
       <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="HH:MM:SS"
-        className={`w-full text-sm p-2.5 rounded-lg border font-mono ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
+        className={`w-full text-sm p-3 rounded-xl border font-mono tracking-widest transition-all duration-200 focus:ring-2
+          ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
     </div>
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-4">
         <TimeInput label="Start Time" value={startTime} onChange={setStartTime} />
         <TimeInput label="End Time" value={endTime} onChange={setEndTime} />
       </div>
@@ -367,21 +399,23 @@ const AIClipsTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Number of Clips</label>
+          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Number of Clips</label>
           <input type="number" value={clipCount} onChange={e => setClipCount(e.target.value)} min={1} max={10}
-            className={`w-full text-sm p-2.5 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
+            className={`w-full text-sm p-3 rounded-xl border transition-all duration-200 focus:ring-2
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
         </div>
         <div>
-          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Duration (sec)</label>
+          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Duration (sec)</label>
           <input type="number" value={clipDuration} onChange={e => setClipDuration(e.target.value)} min={5} max={120}
-            className={`w-full text-sm p-2.5 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`} />
+            className={`w-full text-sm p-3 rounded-xl border transition-all duration-200 focus:ring-2
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white focus:ring-white/5':'bg-white border-zinc-300 focus:ring-zinc-200'} outline-none`} />
         </div>
       </div>
-      <ProcessBtn onClick={handleProcess} processing={processing} label="Create AI Clips" procLabel="Analyzing video..." color="from-cyan-500 to-teal-600" d={d} />
+      <ProcessBtn onClick={handleProcess} processing={processing} label="Create AI Clips" procLabel="Analyzing video..." color="from-teal-500 to-cyan-600" d={d} />
       {clips.length > 0 && <div className="space-y-2">{clips.map((c, i) => (
         <DownloadBtn key={i} url={c.url} label={`Clip ${i+1} (${c.start}s - ${c.end}s)`} d={d} />
       ))}</div>}
@@ -440,30 +474,38 @@ const TTSTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
-      <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Type text here..."
-        className={`w-full text-sm p-3 rounded-lg border resize-none ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} data-testid="tts-text-input" />
-      <div className="grid grid-cols-2 gap-3">
+    <div className="space-y-5">
+      <div>
+        <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Text</label>
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="Type text here..."
+          className={`w-full text-sm p-3.5 rounded-xl border resize-none transition-all duration-200 focus:ring-2
+            ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:ring-white/5'
+              :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} data-testid="tts-text-input" />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Voice</label>
-          <input type="text" placeholder="Search voice..." value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)}
-            className={`w-full text-xs p-2 rounded-lg border mb-1 ${d?'bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} />
+          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Voice</label>
+          <input type="text" placeholder="Search voices..." value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)}
+            className={`w-full text-xs p-2.5 rounded-xl border mb-2 transition-all duration-200
+              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} />
           <select value={voice} onChange={e => setVoice(e.target.value)}
-            className={`w-full text-xs p-2 rounded-lg border ${d?'bg-zinc-800/80 border-zinc-700 text-white':'bg-white border-zinc-300'} outline-none`}>
+            className={`w-full text-xs p-2.5 rounded-xl border ${d?'bg-zinc-800/80 border-zinc-700/80 text-white':'bg-white border-zinc-300'} outline-none`}>
             {filteredVoices.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
           </select>
         </div>
         <div>
-          <label className={`block text-xs font-medium mb-1.5 ${d?'text-zinc-400':'text-zinc-600'}`}>Speed: {speed >= 0 ? '+' : ''}{speed}%</label>
-          <input type="range" min={-50} max={50} value={speed} onChange={e => setSpeed(Number(e.target.value))} className="w-full mt-2 accent-emerald-500" />
+          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Speed: {speed >= 0 ? '+' : ''}{speed}%</label>
+          <input type="range" min={-50} max={50} value={speed} onChange={e => setSpeed(Number(e.target.value))} className="w-full mt-3 accent-emerald-500" />
         </div>
       </div>
       <ProcessBtn onClick={handleGenerate} processing={processing} label="Generate Speech" color="from-emerald-500 to-green-600" d={d} />
       {audioUrl && (
-        <div className="space-y-2">
-          <audio controls src={audioUrl} className="w-full rounded-lg" data-testid="tts-audio-player" />
-          <a href={audioUrl} download="speech.wav" className={`block w-full py-2.5 rounded-lg text-sm font-semibold text-center ${d?'bg-emerald-600 hover:bg-emerald-500 text-white':'bg-emerald-500 hover:bg-emerald-600 text-white'}`}>
-            <DownloadSimple className="w-4 h-4 inline mr-1.5" />Download Audio
+        <div className="space-y-3">
+          <audio controls src={audioUrl} className="w-full rounded-xl" data-testid="tts-audio-player" />
+          <a href={audioUrl} download="speech.wav"
+            className={`block w-full py-3 rounded-xl text-sm font-bold text-center transition-all shadow-md
+              ${d?'bg-emerald-500 hover:bg-emerald-400 text-white':'bg-emerald-500 hover:bg-emerald-600 text-white'}`}>
+            <DownloadSimple className="w-4 h-4 inline mr-2" weight="bold" />Download Audio
           </a>
         </div>
       )}
@@ -501,7 +543,7 @@ const ResizeTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
       <Select label="Target Size" value={preset} onChange={setPreset} options={presets} d={d} />
       <ProcessBtn onClick={handleResize} processing={processing} label="Resize Video" color="from-blue-500 to-indigo-600" d={d} />
@@ -538,7 +580,7 @@ const ConvertTool = ({ token, d }) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <DropZone accept="video/*,audio/*" label="Upload Video or Audio" icon={FileVideo} file={video} onFile={setVideo} d={d} />
       <Select label="Output Format" value={format} onChange={setFormat} options={formats} d={d} />
       <ProcessBtn onClick={handleConvert} processing={processing} label="Convert" color="from-orange-500 to-red-600" d={d} />
@@ -547,7 +589,7 @@ const ConvertTool = ({ token, d }) => {
   );
 };
 
-// ---- Add Logo Tool (Drag & Drop Canvas) ----
+// ---- Add Logo Tool ----
 const AddLogoTool = ({ token, d }) => {
   const [video, setVideo] = useState(null);
   const [logo, setLogo] = useState(null);
@@ -561,14 +603,8 @@ const AddLogoTool = ({ token, d }) => {
   const [dragging, setDragging] = useState(false);
   const previewRef = useRef(null);
 
-  const onVideoSelect = (f) => {
-    setVideo(f);
-    if (f) { setVideoPreview(URL.createObjectURL(f)); } else { setVideoPreview(null); }
-  };
-  const onLogoSelect = (f) => {
-    setLogo(f);
-    if (f) { const r = new FileReader(); r.onload = (e) => setLogoPreview(e.target.result); r.readAsDataURL(f); } else { setLogoPreview(null); }
-  };
+  const onVideoSelect = (f) => { setVideo(f); if (f) { setVideoPreview(URL.createObjectURL(f)); } else { setVideoPreview(null); } };
+  const onLogoSelect = (f) => { setLogo(f); if (f) { const r = new FileReader(); r.onload = (e) => setLogoPreview(e.target.result); r.readAsDataURL(f); } else { setLogoPreview(null); } };
 
   const handleMouseDown = (e) => { e.preventDefault(); setDragging(true); };
   const handleMouseMove = useCallback((e) => {
@@ -603,13 +639,13 @@ const AddLogoTool = ({ token, d }) => {
   const quickPos = (x, y) => setLogoPos({ x, y });
 
   return (
-    <div className="space-y-4" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onTouchMove={handleTouchMove} onTouchEnd={handleMouseUp}>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div className="space-y-5" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onTouchMove={handleTouchMove} onTouchEnd={handleMouseUp}>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left: Big Canvas */}
         <div className="lg:col-span-2">
-          <div className={`rounded-xl overflow-hidden border ${d?'border-zinc-700':'border-zinc-200'}`}>
-            <div className={`flex items-center justify-between px-3 py-2 ${d?'bg-zinc-800':'bg-zinc-100'}`}>
-              <span className={`text-[10px] font-semibold uppercase tracking-wider ${d?'text-zinc-400':'text-zinc-500'}`}>Preview Canvas — Drag logo to position</span>
+          <div className={`rounded-xl overflow-hidden border ${d?'border-zinc-700/50':'border-zinc-200'}`}>
+            <div className={`flex items-center justify-between px-4 py-2.5 ${d?'bg-zinc-800/60':'bg-zinc-100/80'}`}>
+              <span className={`text-[10px] font-bold uppercase tracking-[0.15em] ${d?'text-zinc-400':'text-zinc-500'}`}>Preview Canvas</span>
               <span className={`text-[10px] font-mono ${d?'text-zinc-500':'text-zinc-400'}`}>X:{logoPos.x}% Y:{logoPos.y}%</span>
             </div>
             <div ref={previewRef} className={`relative w-full ${d?'bg-zinc-900':'bg-zinc-950'}`} style={{ aspectRatio: '16/9', cursor: dragging ? 'grabbing' : 'crosshair' }}>
@@ -629,49 +665,38 @@ const AddLogoTool = ({ token, d }) => {
                   <div className={`absolute -inset-1 border-2 border-dashed rounded-sm ${dragging ? 'border-pink-400' : 'border-white/40 hover:border-white/70'} pointer-events-none transition-colors`} />
                 </div>
               )}
-              {/* Grid lines */}
               <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '10% 10%' }} />
             </div>
           </div>
         </div>
 
         {/* Right: Controls */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={onVideoSelect} d={d} />
           <DropZone accept="image/*" label="Upload Logo (PNG)" icon={ImageIcon} file={logo} onFile={onLogoSelect} d={d} />
 
-          {/* Quick Position Buttons */}
           <div>
-            <label className={`block text-[10px] font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-500':'text-zinc-500'}`}>Quick Position</label>
+            <label className={`block text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Quick Position</label>
             <div className="grid grid-cols-3 gap-1.5">
               {[
-                { label: "Top Left", x: 8, y: 8 },
-                { label: "Top Center", x: 50, y: 8 },
-                { label: "Top Right", x: 92, y: 8 },
-                { label: "Mid Left", x: 8, y: 50 },
-                { label: "Center", x: 50, y: 50 },
-                { label: "Mid Right", x: 92, y: 50 },
-                { label: "Bot Left", x: 8, y: 92 },
-                { label: "Bot Center", x: 50, y: 92 },
-                { label: "Bot Right", x: 92, y: 92 },
+                { label: "Top L", x: 8, y: 8 }, { label: "Top C", x: 50, y: 8 }, { label: "Top R", x: 92, y: 8 },
+                { label: "Mid L", x: 8, y: 50 }, { label: "Center", x: 50, y: 50 }, { label: "Mid R", x: 92, y: 50 },
+                { label: "Bot L", x: 8, y: 92 }, { label: "Bot C", x: 50, y: 92 }, { label: "Bot R", x: 92, y: 92 },
               ].map((p) => (
                 <button key={p.label} onClick={() => quickPos(p.x, p.y)}
-                  className={`text-[10px] py-1.5 rounded-md transition-all ${logoPos.x === p.x && logoPos.y === p.y ? 'bg-pink-500 text-white font-semibold' : d ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
+                  className={`text-[10px] py-1.5 rounded-lg font-medium transition-all ${logoPos.x === p.x && logoPos.y === p.y ? 'bg-pink-500 text-white font-bold shadow-md shadow-pink-500/20' : d ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
                   {p.label}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Size Slider */}
           <div>
-            <label className={`block text-[10px] font-semibold uppercase tracking-wider mb-1.5 ${d?'text-zinc-500':'text-zinc-500'}`}>Logo Size: {logoSize}%</label>
+            <label className={`block text-[10px] font-bold uppercase tracking-[0.15em] mb-1.5 ${d?'text-zinc-400':'text-zinc-500'}`}>Size: {logoSize}%</label>
             <input type="range" min={3} max={60} value={logoSize} onChange={e => setLogoSize(Number(e.target.value))} className="w-full accent-pink-500" />
           </div>
-
-          {/* Opacity Slider */}
           <div>
-            <label className={`block text-[10px] font-semibold uppercase tracking-wider mb-1.5 ${d?'text-zinc-500':'text-zinc-500'}`}>Opacity: {opacity}%</label>
+            <label className={`block text-[10px] font-bold uppercase tracking-[0.15em] mb-1.5 ${d?'text-zinc-400':'text-zinc-500'}`}>Opacity: {opacity}%</label>
             <input type="range" min={10} max={100} value={opacity} onChange={e => setOpacity(Number(e.target.value))} className="w-full accent-pink-500" />
           </div>
 
@@ -684,17 +709,12 @@ const AddLogoTool = ({ token, d }) => {
 };
 
 const TOOL_COMPONENTS = {
-  "voice-replace": VoiceReplaceTool,
-  "subtitles": SubtitlesTool,
-  "translate": TranslateTool,
-  "trim": TrimTool,
-  "ai-clips": AIClipsTool,
-  "tts": TTSTool,
-  "resize": ResizeTool,
-  "convert": ConvertTool,
-  "add-logo": AddLogoTool,
+  "voice-replace": VoiceReplaceTool, "subtitles": SubtitlesTool, "translate": TranslateTool,
+  "trim": TrimTool, "ai-clips": AIClipsTool, "tts": TTSTool,
+  "resize": ResizeTool, "convert": ConvertTool, "add-logo": AddLogoTool,
 };
 
+// ---- Main Page ----
 const ToolsPage = () => {
   const { user, token, isDark } = useAuth();
   const d = isDark;
@@ -703,23 +723,23 @@ const ToolsPage = () => {
 
   const ToolComponent = activeTool ? TOOL_COMPONENTS[activeTool] : null;
   const activeToolInfo = TOOLS.find(t => t.id === activeTool);
-  const ac = activeToolInfo ? ACCENT_COLORS[activeToolInfo.accent] : null;
+  const ac = activeToolInfo ? AC[activeToolInfo.accent] : null;
 
   return (
     <div className={`min-h-screen ${d?'bg-zinc-950':'bg-zinc-50'}`} style={{fontFamily:"'IBM Plex Sans',sans-serif"}}>
       {/* Header */}
-      <header className={`sticky top-0 z-50 backdrop-blur-xl shadow-sm ${d?'bg-zinc-950/80 border-b border-zinc-800':'bg-white/80 border-b border-zinc-200'}`}>
+      <header className={`sticky top-0 z-50 backdrop-blur-xl border-b ${d?'bg-zinc-950/90 border-zinc-800/50':'bg-white/90 border-zinc-200'}`}>
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 transition-opacity hover:opacity-80">
               <img src="/voxidub-logo.png" alt="VoxiDub.AI" className="h-10 w-10 rounded-full object-cover border-2 border-zinc-200" />
               <span className={`text-lg font-bold tracking-tight ${d?'text-white':'text-zinc-950'}`} style={{fontFamily:"'Outfit',sans-serif"}}>VoxiDub.AI</span>
             </button>
-            <span className={`text-[9px] px-2 py-0.5 rounded font-bold tracking-[0.15em] uppercase ${d?'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20':'bg-violet-100 text-violet-600'}`}>Tools</span>
+            <span className={`text-[9px] px-2.5 py-1 rounded-md font-bold tracking-[0.15em] uppercase ${d?'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20':'bg-violet-100 text-violet-700 border border-violet-200'}`}>Tools</span>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <button onClick={() => navigate("/dashboard")} className={`text-xs px-3 py-1.5 rounded-sm transition-colors flex items-center gap-1.5 ${d?'bg-zinc-800 text-zinc-300 hover:bg-zinc-700':'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'}`}>
+            <button onClick={() => navigate("/dashboard")} className={`text-xs px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-1.5 ${d?'bg-zinc-800 text-zinc-300 hover:bg-zinc-700':'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'}`}>
               <ArrowLeft className="w-3 h-3" />Dashboard
             </button>
           </div>
@@ -727,8 +747,9 @@ const ToolsPage = () => {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-10">
+        <AnimatePresence mode="wait">
         {!activeTool ? (
-          <>
+          <motion.div key="grid" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
             <div className="mb-10">
               <h1 className={`text-3xl md:text-4xl font-light tracking-tighter ${d?'text-white':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>
                 Video & Audio <span className={`font-medium ${d?'text-cyan-400':'text-violet-600'}`}>Tools</span>
@@ -736,79 +757,91 @@ const ToolsPage = () => {
               <p className={`text-sm mt-2 ${d?'text-zinc-500':'text-zinc-500'}`}>Professional processing powered by FFmpeg & AI</p>
             </div>
 
-            {/* Bento Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 auto-rows-[180px]">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4 auto-rows-[200px]">
               {TOOLS.map((tool, i) => {
-                const colors = ACCENT_COLORS[tool.accent];
+                const c = AC[tool.accent];
                 return (
                   <motion.button key={tool.id}
-                    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-                    whileHover={{ scale: 1.015 }}
+                    initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05, duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+                    whileHover={{ y: -4 }}
                     onClick={() => setActiveTool(tool.id)}
                     data-testid={`tool-card-${tool.id}`}
-                    className={`${tool.span} group relative p-5 md:p-6 rounded-xl border text-left transition-all duration-300 overflow-hidden ${d
-                      ? 'bg-zinc-900/40 backdrop-blur-md border-zinc-800/50 hover:border-zinc-600/80'
-                      : 'bg-white border-zinc-200 hover:border-zinc-300 hover:shadow-lg hover:shadow-zinc-200/50'
-                    }`}
+                    className={`${tool.span} group relative p-6 rounded-2xl border text-left transition-all duration-300 overflow-hidden
+                      ${d ? 'bg-zinc-900/50 backdrop-blur border-zinc-800/60 hover:border-zinc-600' 
+                          : 'bg-white border-zinc-200/80 hover:border-zinc-300 shadow-sm hover:shadow-xl hover:shadow-zinc-200/40'}`}
                   >
-                    {/* Subtle glow on hover */}
-                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${d ? colors.glow : ''}`} style={{background: d ? `radial-gradient(circle at 30% 30%, ${tool.accent === 'cyan' ? 'rgba(6,182,212,0.06)' : tool.accent === 'violet' ? 'rgba(139,92,246,0.06)' : tool.accent === 'sky' ? 'rgba(14,165,233,0.06)' : tool.accent === 'amber' ? 'rgba(245,158,11,0.06)' : tool.accent === 'teal' ? 'rgba(20,184,166,0.06)' : tool.accent === 'emerald' ? 'rgba(16,185,129,0.06)' : tool.accent === 'blue' ? 'rgba(59,130,246,0.06)' : tool.accent === 'orange' ? 'rgba(249,115,22,0.06)' : 'rgba(236,72,153,0.06)'}, transparent 70%)` : ''}} />
+                    {/* Gradient glow on hover */}
+                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none`}
+                      style={{background: d ? `radial-gradient(ellipse at 20% 20%, var(--glow-color, rgba(6,182,212,0.08)), transparent 60%)` : `radial-gradient(ellipse at 20% 20%, var(--glow-color, rgba(139,92,246,0.04)), transparent 60%)`}} />
 
                     <div className="relative z-10 flex flex-col justify-between h-full">
                       <div className="flex items-start justify-between">
-                        <div className={`w-11 h-11 rounded-lg flex items-center justify-center transition-colors group-hover:border-opacity-50 ${d ? 'bg-white/5 border border-white/10' : `${colors.glow} border ${colors.border}`}`}>
-                          <tool.icon className={`w-5 h-5 ${d ? colors.text : colors.textLight}`} weight="duotone" />
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110
+                          ${d ? `bg-gradient-to-br ${c.gradient} shadow-lg` : `${c.bg10} border ${c.border}`}`}>
+                          <tool.icon className={`w-5.5 h-5.5 ${d ? 'text-white' : c.textL}`} weight="duotone" />
                         </div>
-                        {tool.tag && (
-                          <span className={`text-[9px] px-2 py-0.5 rounded font-bold tracking-[0.15em] uppercase ${d ? `${colors.glow} ${colors.text} border ${colors.border}` : `${colors.glow} ${colors.textLight} border ${colors.border}`}`}>
-                            {tool.tag}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {tool.tag && (
+                            <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold tracking-[0.12em] uppercase
+                              ${d ? `${c.bg10} ${c.text} border ${c.border}` : `${c.bg10} ${c.textL} border ${c.border}`}`}>
+                              {tool.tag}
+                            </span>
+                          )}
+                          <ArrowRight className={`w-4 h-4 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-[-4px] group-hover:translate-x-0
+                            ${d?'text-zinc-400':'text-zinc-400'}`} weight="bold" />
+                        </div>
                       </div>
                       <div>
-                        <div className={`text-base font-medium tracking-tight ${d?'text-zinc-100':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{tool.name}</div>
+                        <div className={`text-base font-semibold tracking-tight ${d?'text-zinc-100':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{tool.name}</div>
                         <div className={`text-xs mt-0.5 leading-relaxed ${d?'text-zinc-500':'text-zinc-500'}`}>{tool.desc}</div>
                       </div>
                     </div>
 
-                    {/* Bottom accent line on hover */}
-                    <div className={`absolute bottom-0 left-0 right-0 h-[2px] ${colors.bg} opacity-0 group-hover:opacity-60 transition-opacity duration-300`} />
+                    {/* Bottom accent bar */}
+                    <div className={`absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r ${c.gradient} opacity-0 group-hover:opacity-100 transition-all duration-300`} />
                   </motion.button>
                 );
               })}
             </div>
-          </>
+          </motion.div>
         ) : (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-            <button onClick={() => setActiveTool(null)} className={`flex items-center gap-1.5 text-sm mb-6 transition-colors ${d?'text-zinc-400 hover:text-white':'text-zinc-500 hover:text-zinc-900'}`} data-testid="tools-back-btn">
+          <motion.div key="detail" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
+            <button onClick={() => setActiveTool(null)} data-testid="tools-back-btn"
+              className={`flex items-center gap-2 text-sm font-medium mb-8 px-4 py-2 rounded-xl transition-all
+                ${d?'text-zinc-400 hover:text-white hover:bg-zinc-800/50':'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'}`}>
               <ArrowLeft className="w-4 h-4" /> Back to Tools
             </button>
 
-            <div className={`${activeTool === 'add-logo' ? 'max-w-4xl' : 'max-w-lg'} mx-auto`}>
-              {/* Tool header card */}
-              <div className={`rounded-t-xl border border-b-0 p-5 flex items-center gap-4 ${d ? `bg-zinc-900/60 ${ac.border} border-zinc-800/50` : 'bg-white border-zinc-200'}`}>
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${d ? 'bg-white/5 border border-white/10' : `${ac.glow} border ${ac.border}`}`}>
-                  <activeToolInfo.icon className={`w-6 h-6 ${d ? ac.text : ac.textLight}`} weight="duotone" />
+            <div className={`${activeTool === 'add-logo' ? 'max-w-5xl' : 'max-w-xl'} mx-auto`}>
+              {/* Tool header */}
+              <div className={`rounded-t-2xl border border-b-0 p-6 flex items-center gap-4
+                ${d ? 'bg-zinc-900/60 border-zinc-800/50' : 'bg-white border-zinc-200'}`}>
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg
+                  ${d ? `bg-gradient-to-br ${ac.gradient}` : `${ac.bg10} border ${ac.border}`}`}>
+                  <activeToolInfo.icon className={`w-6 h-6 ${d ? 'text-white' : ac.textL}`} weight="duotone" />
                 </div>
-                <div>
-                  <div className={`text-lg font-medium tracking-tight ${d?'text-white':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{activeToolInfo.name}</div>
-                  <div className={`text-xs ${d?'text-zinc-500':'text-zinc-500'}`}>{activeToolInfo.desc}</div>
+                <div className="flex-1">
+                  <div className={`text-xl font-semibold tracking-tight ${d?'text-white':'text-zinc-900'}`} style={{fontFamily:"'Outfit',sans-serif"}}>{activeToolInfo.name}</div>
+                  <div className={`text-xs mt-0.5 ${d?'text-zinc-500':'text-zinc-500'}`}>{activeToolInfo.desc}</div>
                 </div>
                 {activeToolInfo.tag && (
-                  <span className={`ml-auto text-[9px] px-2 py-0.5 rounded font-bold tracking-[0.15em] uppercase ${d ? `${ac.glow} ${ac.text} border ${ac.border}` : `${ac.glow} ${ac.textLight} border ${ac.border}`}`}>
+                  <span className={`text-[9px] px-2.5 py-1 rounded-md font-bold tracking-[0.12em] uppercase
+                    ${d ? `${ac.bg10} ${ac.text} border ${ac.border}` : `${ac.bg10} ${ac.textL} border ${ac.border}`}`}>
                     {activeToolInfo.tag}
                   </span>
                 )}
               </div>
 
-              {/* Tool form area */}
-              <div className={`rounded-b-xl border p-5 md:p-6 ${d ? 'bg-zinc-900/40 border-zinc-800/50' : 'bg-white border-zinc-200 shadow-sm'}`}>
+              {/* Tool form */}
+              <div className={`rounded-b-2xl border p-6 md:p-8
+                ${d ? 'bg-zinc-900/30 border-zinc-800/50' : 'bg-white border-zinc-200 shadow-lg shadow-zinc-200/30'}`}>
                 <ToolComponent token={token} d={d} />
               </div>
             </div>
           </motion.div>
         )}
+        </AnimatePresence>
       </div>
     </div>
   );
