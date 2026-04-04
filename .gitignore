@@ -62,3 +62,7 @@ memory/test_credentials.md
 
 # Uploads
 uploads/
+-e 
+# Environment files
+*.env
+*.env.*
