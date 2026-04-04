@@ -2487,7 +2487,7 @@ async def generate_video(project_id: str, burn_subtitles: bool = Query(False), a
             user_doc = await db.users.find_one({"user_id": user.user_id})
             tg_chat_id = user_doc.get("telegram_chat_id") if user_doc else None
             if tg_chat_id:
-                local_path = result["path"]
+                local_path = str(LOCAL_STORAGE_DIR / result["path"])
                 project_doc = await db.projects.find_one({"project_id": project_id})
                 title = project_doc.get("title", "Untitled") if project_doc else "Untitled"
                 caption = f"Your dubbed video is ready!\nProject: {title}\n\nPowered by VoxiDub.AI"
