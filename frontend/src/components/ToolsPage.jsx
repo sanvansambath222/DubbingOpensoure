@@ -840,9 +840,9 @@ const ToolsPage = () => {
 
                     <div className="relative z-10 flex flex-col justify-between h-full">
                       <div className="flex items-start justify-between">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110
-                          ${d ? `bg-gradient-to-br ${c.gradient} shadow-lg` : `bg-white shadow-md border border-white/80`}`}>
-                          <tool.icon className={`w-5.5 h-5.5 ${d ? 'text-white' : c.textL}`} weight="duotone" />
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 shadow-lg
+                          ${d ? `bg-gradient-to-br ${c.gradient}` : `bg-gradient-to-br ${c.gradient}`}`}>
+                          <tool.icon className="w-5.5 h-5.5 text-white" weight="duotone" />
                         </div>
                         <div className="flex items-center gap-2">
                           {tool.tag && (
