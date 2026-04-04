@@ -430,36 +430,55 @@ const TTSTool = ({ token, d }) => {
   const [speed, setSpeed] = useState(0);
   const [processing, setProcessing] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
-  const [allVoices, setAllVoices] = useState([]);
-  const [voiceSearch, setVoiceSearch] = useState("");
+  const [langGroups, setLangGroups] = useState([]);
+  const [selectedLang, setSelectedLang] = useState("km");
 
   useEffect(() => {
     axios.get(`${API}/edge-voices`).then(r => {
-      const flat = [];
-      flat.push({ value: "mms_khmer", label: "Meta AI (Boy) - Khmer" });
-      flat.push({ value: "mms_khmer_f", label: "Meta AI (Girl) - Khmer" });
-      flat.push({ value: "dara", label: "Piseth (Boy) - Khmer" });
-      flat.push({ value: "sophea", label: "Sreymom (Girl) - Khmer" });
+      const groups = [];
+      // Khmer first
+      groups.push({
+        code: "km", name: "Khmer",
+        voices: [
+          { value: "dara", label: "Piseth (Boy)" },
+          { value: "sophea", label: "Sreymom (Girl)" },
+          { value: "mms_khmer", label: "Meta AI (Boy)" },
+          { value: "mms_khmer_f", label: "Meta AI (Girl)" },
+        ]
+      });
       for (const lang of (r.data.languages || [])) {
         if (lang.code === "km") continue;
         const langName = LANG_NAMES[lang.code] || lang.code.toUpperCase();
+        const voices = [];
         for (const v of [...(lang.male || []), ...(lang.female || [])]) {
-          flat.push({ value: v.voice, label: `${v.name} - ${langName}` });
+          voices.push({ value: v.voice, label: v.name });
+        }
+        if (voices.length > 0) {
+          groups.push({ code: lang.code, name: langName, voices });
         }
       }
-      setAllVoices(flat);
+      setLangGroups(groups);
     }).catch(() => {
-      setAllVoices([
-        { value: "dara", label: "Piseth (Boy) - Khmer" },
-        { value: "sophea", label: "Sreymom (Girl) - Khmer" },
-        { value: "mms_khmer", label: "Meta AI (Boy) - Khmer" },
-      ]);
+      setLangGroups([{
+        code: "km", name: "Khmer",
+        voices: [
+          { value: "dara", label: "Piseth (Boy)" },
+          { value: "sophea", label: "Sreymom (Girl)" },
+          { value: "mms_khmer", label: "Meta AI (Boy)" },
+        ]
+      }]);
     });
   }, []);
 
-  const filteredVoices = voiceSearch
-    ? allVoices.filter(v => v.label.toLowerCase().includes(voiceSearch.toLowerCase()))
-    : allVoices.slice(0, 50);
+  const currentLangGroup = langGroups.find(g => g.code === selectedLang);
+  const currentVoices = currentLangGroup?.voices || [];
+
+  // Auto-select first voice when language changes
+  const handleLangChange = (code) => {
+    setSelectedLang(code);
+    const group = langGroups.find(g => g.code === code);
+    if (group?.voices?.length) setVoice(group.voices[0].value);
+  };
 
   const handleGenerate = async () => {
     if (!text.trim()) return toast.error("Type some text");
@@ -482,22 +501,62 @@ const TTSTool = ({ token, d }) => {
             ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600 focus:ring-white/5'
               :'bg-white border-zinc-300 placeholder:text-zinc-400 focus:ring-zinc-200'} outline-none`} data-testid="tts-text-input" />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Voice</label>
-          <input type="text" placeholder="Search voices..." value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)}
-            className={`w-full text-xs p-2.5 rounded-xl border mb-2 transition-all duration-200
-              ${d?'bg-zinc-800/80 border-zinc-700/80 text-white placeholder:text-zinc-600':'bg-white border-zinc-300 placeholder:text-zinc-400'} outline-none`} />
-          <select value={voice} onChange={e => setVoice(e.target.value)}
-            className={`w-full text-xs p-2.5 rounded-xl border ${d?'bg-zinc-800/80 border-zinc-700/80 text-white':'bg-white border-zinc-300'} outline-none`}>
-            {filteredVoices.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
-          </select>
+
+      {/* Language picker */}
+      <div>
+        <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Language</label>
+        <div className="flex flex-wrap gap-1.5" data-testid="tts-language-picker">
+          {langGroups.slice(0, 20).map(g => (
+            <button key={g.code} onClick={() => handleLangChange(g.code)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
+                ${selectedLang === g.code
+                  ? (d ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' : 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20')
+                  : (d ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200')
+                }`}>
+              {g.name} <span className={`text-[10px] ml-0.5 ${selectedLang === g.code ? 'text-emerald-100' : d ? 'text-zinc-600' : 'text-zinc-400'}`}>({g.voices.length})</span>
+            </button>
+          ))}
+          {langGroups.length > 20 && (
+            <select onChange={e => { if(e.target.value) handleLangChange(e.target.value); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
+                ${d ? 'bg-zinc-800 text-zinc-400 border-none' : 'bg-zinc-100 text-zinc-600 border-none'} outline-none`}>
+              <option value="">More languages...</option>
+              {langGroups.slice(20).map(g => (
+                <option key={g.code} value={g.code}>{g.name} ({g.voices.length})</option>
+              ))}
+            </select>
+          )}
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Voice select */}
+        <div>
+          <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>
+            Voice {currentLangGroup ? `(${currentLangGroup.name})` : ''}
+          </label>
+          <div className="space-y-1.5" data-testid="tts-voice-list">
+            {currentVoices.map(v => (
+              <button key={v.value} onClick={() => setVoice(v.value)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200
+                  ${voice === v.value
+                    ? (d ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border border-emerald-300')
+                    : (d ? 'bg-zinc-800/50 text-zinc-400 border border-zinc-700/50 hover:border-zinc-600' : 'bg-zinc-50 text-zinc-600 border border-zinc-200 hover:border-zinc-300')
+                  }`}>
+                {voice === v.value && <Check className="w-3 h-3 inline mr-1.5" weight="bold" />}
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Speed */}
         <div>
           <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${d?'text-zinc-400':'text-zinc-500'}`}>Speed: {speed >= 0 ? '+' : ''}{speed}%</label>
           <input type="range" min={-50} max={50} value={speed} onChange={e => setSpeed(Number(e.target.value))} className="w-full mt-3 accent-emerald-500" />
         </div>
       </div>
+
       <ProcessBtn onClick={handleGenerate} processing={processing} label="Generate Speech" color="from-emerald-500 to-green-600" d={d} />
       {audioUrl && (
         <div className="space-y-3">
