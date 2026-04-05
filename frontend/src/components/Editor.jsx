@@ -990,36 +990,37 @@ const Editor = () => {
                 </div>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <div className="flex gap-3 overflow-x-auto pb-1">
                 {actors.map((actor) => {
                   const isMale = actor.gender === 'male';
                   const actorSegs = segments.filter(s => s.speaker === actor.id);
                   const totalLen = actorSegs.reduce((sum, s) => sum + ((s.end || 0) - (s.start || 0)), 0);
                   const segCount = actorSegs.length;
+                  const sampleText = actorSegs[0]?.original?.slice(0, 40) || '';
                   return (
                     <div key={actor.id} data-testid={`actor-card-${actor.id}`}
-                      className={`min-w-[185px] rounded-sm p-2.5 transition-all flex-shrink-0 border-l-4 border ${
+                      className={`min-w-[220px] rounded-lg p-3 transition-all flex-shrink-0 border-l-4 border ${
                         isMale
                           ? (d ? 'bg-zinc-800 border-zinc-700 border-l-blue-500' : 'bg-white border-zinc-200 border-l-blue-500')
                           : (d ? 'bg-zinc-800 border-zinc-700 border-l-pink-500' : 'bg-white border-zinc-200 border-l-pink-500')
                       }`}>
-                      <div className={`flex items-center gap-1.5 mb-2 pb-2 border-b ${d ? 'border-zinc-700' : 'border-zinc-200'}`}>
-                        <div className={`w-7 h-7 rounded-sm flex items-center justify-center ${isMale ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-pink-100 dark:bg-pink-900/40'}`}>
-                          {isMale ? <GenderMale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" weight="bold" /> : <GenderFemale className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" weight="bold" />}
+                      <div className={`flex items-center gap-2 mb-2.5 pb-2.5 border-b ${d ? 'border-zinc-700' : 'border-zinc-200'}`}>
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isMale ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-pink-100 dark:bg-pink-900/40'}`}>
+                          {isMale ? <GenderMale className="w-5 h-5 text-blue-600 dark:text-blue-400" weight="bold" /> : <GenderFemale className="w-5 h-5 text-pink-600 dark:text-pink-400" weight="bold" />}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`font-semibold text-[11px] truncate ${d?'text-white':'text-zinc-900'}`}>{actor.label || actor.id}</p>
-                          <div className="flex items-center gap-1 mt-0.5">
+                          <p className={`font-bold text-sm truncate ${d?'text-white':'text-zinc-900'}`}>{actor.label || actor.id}</p>
+                          <div className="flex items-center gap-1.5 mt-1">
                             <select data-testid={`actor-gender-${actor.id}`} value={actor.gender || 'female'}
                               onChange={(e) => updateActor(actor.id, 'gender', e.target.value)}
-                              className={`text-[9px] font-bold border-none outline-none cursor-pointer rounded px-1 py-0.5 ${
+                              className={`text-xs font-bold border-none outline-none cursor-pointer rounded-md px-2 py-1 ${
                                 isMale ? (d ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-100 text-blue-700') : (d ? 'bg-pink-900/50 text-pink-300' : 'bg-pink-100 text-pink-700')
                               }`}>
                               <option value="female">Girl</option>
                               <option value="male">Boy</option>
                             </select>
                             {actor.role && (
-                              <span className={`text-[8px] px-1 py-0.5 rounded font-medium ${d?'bg-cyan-900/30 text-cyan-300':'bg-cyan-50 text-cyan-700'}`} data-testid={`actor-role-${actor.id}`}>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${d?'bg-cyan-900/30 text-cyan-300':'bg-cyan-50 text-cyan-700'}`} data-testid={`actor-role-${actor.id}`}>
                                 {actor.role}
                               </span>
                             )}
@@ -1027,7 +1028,13 @@ const Editor = () => {
                         </div>
                       </div>
 
-                      <div className={`rounded-sm px-2 py-1.5 mb-2 border cursor-pointer transition-all ${
+                      {sampleText && (
+                        <div className={`text-[10px] italic mb-2 px-2 py-1.5 rounded-md truncate ${d?'bg-zinc-700/50 text-zinc-400':'bg-zinc-50 text-zinc-500'}`} title={actorSegs[0]?.original}>
+                          "{sampleText}{actorSegs[0]?.original?.length > 40 ? '...' : ''}"
+                        </div>
+                      )}
+
+                      <div className={`rounded-md px-2.5 py-2 mb-2.5 border cursor-pointer transition-all ${
                         speakerFilter === actor.id
                           ? (d ? 'bg-emerald-900/30 border-emerald-600 ring-1 ring-emerald-500' : 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400')
                           : isMale ? (d ? 'bg-blue-900/20 border-blue-800/30 hover:border-blue-600' : 'bg-blue-50 border-blue-200 hover:border-blue-400') : (d ? 'bg-pink-900/20 border-pink-800/30 hover:border-pink-600' : 'bg-pink-50 border-pink-200 hover:border-pink-400')
@@ -1035,12 +1042,12 @@ const Editor = () => {
                         data-testid={`actor-filter-lines-${actor.id}`}
                         title={speakerFilter === actor.id ? "Click to show all lines" : `Click to show only ${actor.label || actor.id} lines`}>
                         <div className="flex items-center justify-between">
-                          <span className={`text-[9px] font-semibold ${
+                          <span className={`text-xs font-semibold ${
                             speakerFilter === actor.id ? (d ? 'text-emerald-300' : 'text-emerald-600') : isMale ? (d?'text-blue-300':'text-blue-600') : (d?'text-pink-300':'text-pink-600')
                           }`}>
                             {speakerFilter === actor.id ? '✓ ' : ''}{segCount} {segCount === 1 ? 'line' : 'lines'}
                           </span>
-                          <span className={`text-[10px] font-bold ${isMale ? (d?'text-blue-200':'text-blue-700') : (d?'text-pink-200':'text-pink-700')}`}>
+                          <span className={`text-sm font-bold ${isMale ? (d?'text-blue-200':'text-blue-700') : (d?'text-pink-200':'text-pink-700')}`}>
                             {totalLen < 60 ? `${totalLen.toFixed(1)}s` : `${Math.floor(totalLen / 60)}m ${Math.round(totalLen % 60)}s`}
                           </span>
                         </div>
