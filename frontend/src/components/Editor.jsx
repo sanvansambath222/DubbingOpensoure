@@ -702,7 +702,6 @@ const Editor = () => {
   const handleTimelineSeek = (time) => {
     if (originalVideoRef.current) {
       originalVideoRef.current.currentTime = time;
-      originalVideoRef.current.play().catch(() => {});
     }
   };
 

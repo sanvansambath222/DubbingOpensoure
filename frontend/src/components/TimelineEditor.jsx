@@ -125,14 +125,20 @@ const TimelineEditor = ({
   };
 
   // Playhead drag
+  const playheadClickRef = useRef(false);
   const handlePlayheadDown = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    playheadClickRef.current = true;
     setDraggingPlayhead({ startX: e.clientX, startTime: videoCurrentTime || 0 });
   };
 
   const handlePlayheadMove = useCallback((e) => {
     if (!draggingPlayhead || !containerRef.current) return;
+    // If moved more than 3px, it's a real drag (not a click)
+    if (Math.abs(e.clientX - draggingPlayhead.startX) > 3) {
+      playheadClickRef.current = false;
+    }
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left + containerRef.current.scrollLeft - LABEL_WIDTH;
     const time = Math.max(0, Math.min(duration, x / zoom));
@@ -140,8 +146,12 @@ const TimelineEditor = ({
   }, [draggingPlayhead, zoom, duration, onSeekVideo]);
 
   const handlePlayheadUp = useCallback(() => {
+    // If it was just a click (no drag), toggle play/pause
+    if (playheadClickRef.current) {
+      onPlayPause?.();
+    }
     setDraggingPlayhead(null);
-  }, []);
+  }, [onPlayPause]);
 
   useEffect(() => {
     if (!draggingPlayhead) return;
