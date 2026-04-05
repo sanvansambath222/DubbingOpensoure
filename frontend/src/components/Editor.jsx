@@ -422,10 +422,12 @@ const Editor = () => {
     } catch (e) { toast.error(e.response?.data?.detail || "Merge failed"); }
   };
 
-  const splitSegment = async (idx, part1Speaker, part2Speaker) => {
+  const splitSegment = async (idx, part1Speaker, part2Speaker, splitTime) => {
     try {
+      const body = { segment_id: idx };
+      if (splitTime !== undefined && splitTime !== null) body.split_time = splitTime;
       const r = await axios.post(`${API}/projects/${projectId}/split-segment`,
-        { segment_id: idx },
+        body,
         { headers: { Authorization: `Bearer ${token}` } });
       let newSegs = r.data.segments || [];
       // Assign speakers if provided (from timeline split picker)

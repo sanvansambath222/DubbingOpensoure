@@ -434,23 +434,33 @@ const TimelineEditor = ({
                         style={{ left: left + 4, top: -36 }}
                         data-testid={`timeline-toolbar-${seg._idx}`}
                         onClick={(e) => e.stopPropagation()}>
-                        {/* Split button */}
+                        {/* Split button - splits at playhead position */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             const s = segments[seg._idx];
-                            const orig = s?.original || '';
+                            const segStart = s?.start || 0;
+                            const segEnd = s?.end || 0;
+                            // Use playhead position if it's inside this segment, otherwise midpoint
+                            const currentTime = videoCurrentTime || 0;
+                            const splitTime = (currentTime > segStart && currentTime < segEnd)
+                              ? currentTime
+                              : (segStart + segEnd) / 2;
+                            // Calculate text split ratio based on time position
+                            const ratio = (splitTime - segStart) / (segEnd - segStart);
                             const trans = s?.translated || '';
-                            const origWords = orig.includes(' ') ? orig.split(' ') : [...orig];
+                            const orig = s?.original || '';
                             const transWords = trans.includes(' ') ? trans.split(' ') : [...trans];
-                            const midO = Math.ceil(origWords.length / 2);
-                            const midT = Math.ceil(transWords.length / 2);
-                            const joinerO = orig.includes(' ') ? ' ' : '';
+                            const origWords = orig.includes(' ') ? orig.split(' ') : [...orig];
+                            const splitIdxT = Math.max(1, Math.round(transWords.length * ratio));
+                            const splitIdxO = Math.max(1, Math.round(origWords.length * ratio));
                             const joinerT = trans.includes(' ') ? ' ' : '';
+                            const joinerO = orig.includes(' ') ? ' ' : '';
                             setSplitPicker({
                               segIdx: seg._idx,
-                              part1Text: joinerT.length ? transWords.slice(0, midT).join(joinerT) : origWords.slice(0, midO).join(joinerO),
-                              part2Text: joinerT.length ? transWords.slice(midT).join(joinerT) : origWords.slice(midO).join(joinerO),
+                              splitTime: Math.round(splitTime * 10) / 10,
+                              part1Text: joinerT.length ? transWords.slice(0, splitIdxT).join(joinerT) : origWords.slice(0, splitIdxO).join(joinerO),
+                              part2Text: joinerT.length ? transWords.slice(splitIdxT).join(joinerT) : origWords.slice(splitIdxO).join(joinerO),
                               part1Speaker: s?.speaker,
                               part2Speaker: s?.speaker,
                             });
@@ -458,7 +468,15 @@ const TimelineEditor = ({
                           }}
                           data-testid={`timeline-split-${seg._idx}`}
                           className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-all ${d ? 'hover:bg-violet-500/20 text-violet-400' : 'hover:bg-violet-100 text-violet-600'}`}>
-                          <Scissors className="w-3.5 h-3.5" weight="bold" /> Split
+                          <Scissors className="w-3.5 h-3.5" weight="bold" />
+                          Split {(() => {
+                            const currentTime = videoCurrentTime || 0;
+                            const segStart = seg.start || 0;
+                            const segEnd = seg.end || 0;
+                            return (currentTime > segStart && currentTime < segEnd)
+                              ? `@${formatShort(currentTime)}`
+                              : '';
+                          })()}
                         </button>
                         {/* Upload MP3 button */}
                         <button
@@ -628,6 +646,9 @@ const TimelineEditor = ({
             <span className={`text-sm font-bold ${d ? 'text-zinc-200' : 'text-zinc-800'}`}>
               Pick speaker for each part
             </span>
+            <span className={`text-xs font-mono px-2 py-0.5 rounded ${d ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'}`}>
+              Split at {formatShort(splitPicker.splitTime || 0)}
+            </span>
           </div>
 
           <div className="flex gap-4">
@@ -698,7 +719,7 @@ const TimelineEditor = ({
           <div className="flex items-center gap-2 mt-3">
             <button
               onClick={() => {
-                onSplitSegment?.(splitPicker.segIdx, splitPicker.part1Speaker, splitPicker.part2Speaker);
+                onSplitSegment?.(splitPicker.segIdx, splitPicker.part1Speaker, splitPicker.part2Speaker, splitPicker.splitTime);
                 setSplitPicker(null);
               }}
               data-testid="split-confirm-btn"

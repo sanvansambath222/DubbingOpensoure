@@ -1570,6 +1570,7 @@ async def merge_segments(project_id: str, req: MergeRequest, authorization: str 
 # Split segment
 class SplitRequest(BaseModel):
     segment_id: int
+    split_time: float = None  # Optional: exact time to split at (from playhead)
 
 @api_router.post("/projects/{project_id}/split-segment")
 async def split_segment(project_id: str, req: SplitRequest, authorization: str = Header(None)):
@@ -1582,18 +1583,25 @@ async def split_segment(project_id: str, req: SplitRequest, authorization: str =
     if idx < 0 or idx >= len(segments):
         raise HTTPException(status_code=400, detail="Invalid segment ID")
     seg = segments[idx]
-    mid_time = (seg.get("start", 0) + seg.get("end", 0)) / 2
+    seg_start = seg.get("start", 0)
+    seg_end = seg.get("end", 0)
+    # Use playhead split_time if provided and valid, otherwise midpoint
+    if req.split_time is not None and seg_start < req.split_time < seg_end:
+        split_at = round(req.split_time, 1)
+    else:
+        split_at = round((seg_start + seg_end) / 2, 1)
+    # Calculate text split ratio
+    ratio = (split_at - seg_start) / max(seg_end - seg_start, 0.1)
     orig = seg.get("original", "")
     trans = seg.get("translated", "")
-    # Split text at midpoint
     orig_words = orig.split() if " " in orig else list(orig)
     trans_words = trans.split() if " " in trans else list(trans)
-    mid_o = len(orig_words) // 2
-    mid_t = len(trans_words) // 2
+    mid_o = max(1, round(len(orig_words) * ratio)) if orig_words else 0
+    mid_t = max(1, round(len(trans_words) * ratio)) if trans_words else 0
     joiner_o = " " if " " in orig else ""
     joiner_t = " " if " " in trans else ""
-    seg1 = {**seg, "end": round(mid_time, 1), "original": joiner_o.join(orig_words[:mid_o]) if orig_words else "", "translated": joiner_t.join(trans_words[:mid_t]) if trans_words else ""}
-    seg2 = {**seg, "start": round(mid_time, 1), "original": joiner_o.join(orig_words[mid_o:]) if orig_words else "", "translated": joiner_t.join(trans_words[mid_t:]) if trans_words else ""}
+    seg1 = {**seg, "end": split_at, "original": joiner_o.join(orig_words[:mid_o]) if orig_words else "", "translated": joiner_t.join(trans_words[:mid_t]) if trans_words else ""}
+    seg2 = {**seg, "start": split_at, "original": joiner_o.join(orig_words[mid_o:]) if orig_words else "", "translated": joiner_t.join(trans_words[mid_t:]) if trans_words else ""}
     seg2.pop("custom_audio", None)
     seg1.pop("custom_audio", None)
     new_segments = segments[:idx] + [seg1, seg2] + segments[idx+1:]
