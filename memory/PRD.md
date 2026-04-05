@@ -19,7 +19,7 @@ Build a video/audio dubbing platform with AI transcription, translation, TTS voi
 - [x] GPT role-name gender override (Husband→male, Wife→female, etc.)
 - [x] Demucs AI vocal removal (chunked)
 - [x] Background async processing
-- [x] 10 Standalone Tools (Voice Replace, Subtitles, Translate, Trim, AI Clips, TTS, Resize, Convert, Add Logo, **Remove Logo**)
+- [x] 10 Standalone Tools (Voice Replace, Subtitles, Translate, Trim, AI Clips, TTS, Resize, Convert, Add Logo, Remove Logo)
 - [x] 322 Edge TTS voices across 75 languages with search
 - [x] Voice preview (play before select)
 - [x] VoxiDub.AI logo (round icon + text) in navbar
@@ -42,13 +42,22 @@ Build a video/audio dubbing platform with AI transcription, translation, TTS voi
 - [x] Subscription APIs — /subscription/plans, /me, /use-credit, /buy-credits, /activate, /history
 - [x] Queue system — asyncio.Lock processes 1 video at a time, waitlist with position
 - [x] Free plan 2 videos — Changed from 1 to 2 videos per month
-- [x] **Queue bug fix** — Fixed stale project data, missing error handling, queue_status not updating to "done"
-- [x] **Frontend queue fix** — Editor.jsx now handles "queued" status same as "processing" for polling
-- [x] **Remove Logo tool** — FFmpeg delogo + blur filters, draw-to-select UI, 2 removal methods
+- [x] Queue bug fix — Fixed stale project data, missing error handling, queue_status not updating to "done"
+- [x] Frontend queue fix — Editor.jsx now handles "queued" status same as "processing" for polling
+- [x] Remove Logo tool — FFmpeg delogo + blur filters, draw-to-select UI, 5 removal methods
+- [x] All 8 video tools auto-send to Telegram with "Sent to Telegram!" badge
+- [x] Speed optimizations — Parallel TTS, in-memory pydub mixing, globally cached Demucs
+- [x] Improved Actor Detection UI with gender icons and sample text
+- [x] Video Preview Sync — click play on segment row seeks video
+- [x] GPT Gender Detection Refinement in auto-process flow
+- [x] Meta MMS TTS pure model output (no FFmpeg speed/pitch)
+- [x] **Interactive Timeline Editor** — Drag-and-drop colored blocks (blue=boy, pink=girl) on timeline to adjust audio segment timing, with zoom controls, time ruler, background audio track, click-to-seek video sync, and save/reset offsets (2026-04-05)
 
 ## Upcoming Tasks
-- [ ] ABA PayWay Payment Integration (blocked: waiting for sandbox API keys from user)
-- [ ] Refactor server.py (~4000 lines → split into routes/services) — P1
+- [ ] Render Final Video with Timeline Adjustments (backend support for timeline_offset during mixing) — P0
+- [ ] ABA PayWay Payment Integration (blocked: waiting for sandbox API keys from user) — P1
+- [ ] Install `faster-whisper` locally to replace OpenAI Whisper API — P2
+- [ ] Refactor server.py (~4200 lines → split into routes/services) — P1
 - [ ] Mobile-friendly layout tweaks — P2
 - [ ] Export different video qualities — P2
 - [ ] Nginx/Cloudflare setup — P2
