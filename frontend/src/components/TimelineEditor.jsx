@@ -566,37 +566,39 @@ const TimelineEditor = ({
             );
           })()}
 
-          {/* Playhead - BIG draggable handle */}
+          {/* Playhead */}
           <div className={`absolute top-0 z-40`}
             style={{ left: playheadX - 1, height: totalHeight }}
             data-testid="timeline-playhead">
             {/* Vertical line */}
             <div className={`absolute left-[1px] top-0 w-[2px] h-full transition-colors ${
-              draggingPlayhead ? 'bg-red-500 shadow-lg shadow-red-500/30' : isPlaying ? 'bg-red-500' : 'bg-red-400/70'
+              draggingPlayhead ? 'bg-red-500 shadow-lg shadow-red-500/30' : isPlaying ? 'bg-red-500' : 'bg-red-400/40'
             }`} />
-            {/* Big draggable handle at top */}
+            {/* Handle - big when playing/dragging, small when stopped */}
             <div
               onMouseDown={handlePlayheadDown}
               data-testid="timeline-playhead-handle"
-              className={`absolute -left-[13px] -top-[2px] cursor-grab active:cursor-grabbing group transition-transform ${
-                draggingPlayhead ? 'scale-110' : 'hover:scale-105'
+              className={`absolute cursor-grab active:cursor-grabbing transition-all duration-200 ${
+                isPlaying || draggingPlayhead
+                  ? '-left-[13px] -top-[2px]'
+                  : '-left-[5px] -top-[1px] hover:-left-[13px] hover:-top-[2px]'
               }`}>
-              <svg width="28" height="32" viewBox="0 0 28 32" className="drop-shadow-lg">
-                {/* Handle body */}
-                <rect x="2" y="0" width="24" height="20" rx="4"
-                  className={`transition-colors ${
-                    draggingPlayhead ? 'fill-red-500' : isPlaying ? 'fill-red-500' : 'fill-red-400'
-                  }`} />
-                {/* Arrow pointing down */}
-                <polygon points="6,20 22,20 14,30"
-                  className={`transition-colors ${
-                    draggingPlayhead ? 'fill-red-500' : isPlaying ? 'fill-red-500' : 'fill-red-400'
-                  }`} />
-                {/* Grip lines inside handle */}
-                <line x1="10" y1="6" x2="10" y2="15" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-                <line x1="14" y1="6" x2="14" y2="15" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-                <line x1="18" y1="6" x2="18" y2="15" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-              </svg>
+              {isPlaying || draggingPlayhead ? (
+                <svg width="28" height="32" viewBox="0 0 28 32" className="drop-shadow-lg">
+                  <rect x="2" y="0" width="24" height="20" rx="4"
+                    className={`transition-colors ${draggingPlayhead ? 'fill-red-500' : 'fill-red-500'}`} />
+                  <polygon points="6,20 22,20 14,30"
+                    className={`transition-colors ${draggingPlayhead ? 'fill-red-500' : 'fill-red-500'}`} />
+                  <line x1="10" y1="6" x2="10" y2="15" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+                  <line x1="14" y1="6" x2="14" y2="15" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+                  <line x1="18" y1="6" x2="18" y2="15" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+                </svg>
+              ) : (
+                <svg width="12" height="16" viewBox="0 0 12 16" className="drop-shadow opacity-50 hover:opacity-100 transition-opacity">
+                  <rect x="1" y="0" width="10" height="10" rx="2" className="fill-red-400" />
+                  <polygon points="3,10 9,10 6,15" className="fill-red-400" />
+                </svg>
+              )}
             </div>
           </div>
         </div>
