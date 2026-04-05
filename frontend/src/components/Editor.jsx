@@ -720,6 +720,18 @@ const Editor = () => {
     } catch { setSaveStatus("error"); toast.error("Failed to save timeline"); }
   };
 
+  const handleTimelineSpeakerChange = async (segIdx, newSpeakerId, newGender) => {
+    const updated = [...segments];
+    updated[segIdx] = { ...updated[segIdx], speaker: newSpeakerId, gender: newGender };
+    // Remove old audio since speaker changed
+    delete updated[segIdx].custom_audio;
+    setSegments(updated);
+    try {
+      await axios.patch(`${API}/projects/${projectId}`, { segments: updated }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success("Speaker changed!");
+    } catch { toast.error("Failed to change speaker"); }
+  };
+
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${d?'bg-zinc-950':'bg-zinc-50'}`}><Spinner className="w-12 h-12 text-zinc-400 animate-spin" /></div>;
 
   const step = getCurrentStep();
@@ -1299,6 +1311,8 @@ const Editor = () => {
               isPlaying={isTimelinePlaying}
               onPlayPause={handleTimelinePlayPause}
               onStop={handleTimelineStop}
+              onSplitSegment={splitSegment}
+              onChangeSpeaker={handleTimelineSpeakerChange}
             />
           )}
 

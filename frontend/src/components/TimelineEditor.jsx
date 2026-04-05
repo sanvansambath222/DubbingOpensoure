@@ -2,7 +2,8 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import {
   GenderMale, GenderFemale, MagnifyingGlassPlus, MagnifyingGlassMinus,
   Waveform, FloppyDisk, ArrowsHorizontal, ArrowCounterClockwise,
-  Play, Pause, Stop, DotsSixVertical, Clock, SpeakerHigh
+  Play, Pause, Stop, DotsSixVertical, Clock, SpeakerHigh,
+  Scissors, UserSwitch, X
 } from "@phosphor-icons/react";
 
 const MIN_ZOOM = 8;
@@ -30,7 +31,8 @@ const formatShort = (sec) => {
 const TimelineEditor = ({
   segments, actors, isDark, totalDuration,
   onOffsetChange, onSeekVideo, videoCurrentTime, onSaveOffsets,
-  isPlaying, onPlayPause, onStop
+  isPlaying, onPlayPause, onStop,
+  onSplitSegment, onChangeSpeaker
 }) => {
   const d = isDark;
   const containerRef = useRef(null);
@@ -38,6 +40,7 @@ const TimelineEditor = ({
   const [dragging, setDragging] = useState(null);
   const [offsets, setOffsets] = useState({});
   const [hoveredSeg, setHoveredSeg] = useState(null);
+  const [selectedSeg, setSelectedSeg] = useState(null);
   const hasChanges = Object.values(offsets).some(v => v !== 0);
 
   const duration = useMemo(() => {
@@ -111,6 +114,7 @@ const TimelineEditor = ({
 
   const handleTimelineClick = (e) => {
     if (dragging) return;
+    setSelectedSeg(null);
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left + (containerRef.current?.scrollLeft || 0) - LABEL_WIDTH;
@@ -311,22 +315,29 @@ const TimelineEditor = ({
                   const width = Math.max(segDur * zoom, 16);
                   const isDraggingThis = dragging?.segIdx === seg._idx;
                   const isHovered = hoveredSeg === seg._idx;
+                  const isSelected = selectedSeg === seg._idx;
 
                   return (
+                    <div key={seg._idx} className="contents">
                     <div
-                      key={seg._idx}
                       data-testid={`timeline-block-${seg._idx}`}
                       onMouseDown={(e) => handleMouseDown(e, seg._idx)}
                       onMouseEnter={() => setHoveredSeg(seg._idx)}
                       onMouseLeave={() => setHoveredSeg(null)}
-                      onClick={(e) => { e.stopPropagation(); onSeekVideo?.(seg.start || 0); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedSeg(isSelected ? null : seg._idx);
+                        onSeekVideo?.(seg.start || 0);
+                      }}
                       title={`${seg.translated || seg.original || 'Segment ' + (seg._idx + 1)}\n${formatShort(seg.start || 0)} → ${formatShort(seg.end || 0)} (${segDur.toFixed(1)}s)${offset ? `\nOffset: ${offset > 0 ? '+' : ''}${offset.toFixed(1)}s` : ''}`}
                       className={`absolute rounded-lg cursor-grab active:cursor-grabbing flex items-center gap-1 overflow-hidden border-2 transition-all ${
                         isDraggingThis
                           ? 'ring-2 ring-offset-1 shadow-2xl z-30 scale-[1.02]'
-                          : isHovered
-                            ? 'shadow-xl z-20 brightness-110'
-                            : 'shadow-md z-10 hover:shadow-lg'
+                          : isSelected
+                            ? 'ring-2 ring-offset-1 ring-yellow-400 shadow-2xl z-25'
+                            : isHovered
+                              ? 'shadow-xl z-20 brightness-110'
+                              : 'shadow-md z-10 hover:shadow-lg'
                       } ${
                         isMale
                           ? `border-blue-400/60 text-white ${isDraggingThis ? 'ring-blue-300 bg-blue-500' : 'bg-blue-500/90'}`
@@ -371,6 +382,52 @@ const TimelineEditor = ({
                       <div className={`flex-shrink-0 flex items-center justify-center w-4 h-full opacity-30 hover:opacity-70`}>
                         <DotsSixVertical className="w-3 h-3" weight="bold" />
                       </div>
+                    </div>
+
+                    {/* Floating Toolbar - shown when block is selected */}
+                    {isSelected && !isDraggingThis && (
+                      <div className={`absolute z-50 flex items-center gap-1 px-1.5 py-1 rounded-lg shadow-xl border ${d ? 'bg-zinc-800 border-zinc-600' : 'bg-white border-zinc-300'}`}
+                        style={{ left: left + 4, top: -36 }}
+                        data-testid={`timeline-toolbar-${seg._idx}`}
+                        onClick={(e) => e.stopPropagation()}>
+                        {/* Split button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onSplitSegment?.(seg._idx); setSelectedSeg(null); }}
+                          data-testid={`timeline-split-${seg._idx}`}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-all ${d ? 'hover:bg-violet-500/20 text-violet-400' : 'hover:bg-violet-100 text-violet-600'}`}>
+                          <Scissors className="w-3.5 h-3.5" weight="bold" /> Split
+                        </button>
+                        {/* Divider */}
+                        <div className={`w-px h-5 ${d ? 'bg-zinc-600' : 'bg-zinc-200'}`} />
+                        {/* Actor picker */}
+                        {actors.map(actor => {
+                          const isCurrent = seg.speaker === actor.id;
+                          const actorMale = actor.gender === 'male';
+                          return (
+                            <button key={actor.id}
+                              onClick={(e) => { e.stopPropagation(); if (!isCurrent) { onChangeSpeaker?.(seg._idx, actor.id, actor.gender); setSelectedSeg(null); } }}
+                              data-testid={`timeline-assign-${seg._idx}-${actor.id}`}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-all ${
+                                isCurrent
+                                  ? (actorMale
+                                    ? (d ? 'bg-blue-500/25 text-blue-300 ring-1 ring-blue-500/40' : 'bg-blue-100 text-blue-700 ring-1 ring-blue-300')
+                                    : (d ? 'bg-pink-500/25 text-pink-300 ring-1 ring-pink-500/40' : 'bg-pink-100 text-pink-700 ring-1 ring-pink-300'))
+                                  : (d ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500')
+                              }`}>
+                              {actorMale
+                                ? <GenderMale className="w-3 h-3" weight="bold" />
+                                : <GenderFemale className="w-3 h-3" weight="bold" />}
+                              {actor.label || actor.id}
+                            </button>
+                          );
+                        })}
+                        {/* Close */}
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedSeg(null); }}
+                          className={`w-5 h-5 rounded flex items-center justify-center ml-0.5 ${d ? 'hover:bg-zinc-700 text-zinc-500' : 'hover:bg-zinc-100 text-zinc-400'}`}>
+                          <X className="w-3 h-3" weight="bold" />
+                        </button>
+                      </div>
+                    )}
                     </div>
                   );
                 })}
