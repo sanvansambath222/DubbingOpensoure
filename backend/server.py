@@ -1752,6 +1752,37 @@ async def export_script(project_id: str, authorization: str = Header(None)):
         headers={"Content-Disposition": f'attachment; filename="script_{project_id}.txt"'}
     )
 
+
+# Export CSV template for voice import
+@api_router.get("/projects/{project_id}/export-csv-template")
+async def export_csv_template(project_id: str, authorization: str = Header(None)):
+    user = await get_current_user(authorization)
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    segments = project.get("segments", [])
+    actors_map = {a["id"]: a for a in project.get("actors", [])}
+    import csv, io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["line", "mp3_file", "speaker", "gender", "duration", "original", "translated"])
+    for i, seg in enumerate(segments):
+        speaker_id = seg.get("speaker", "")
+        actor = actors_map.get(speaker_id, {})
+        label = actor.get("label", speaker_id)
+        gender = seg.get("gender", actor.get("gender", ""))
+        gender_tag = "Boy" if gender == "male" else "Girl" if gender == "female" else ""
+        dur = round(seg.get("end", 0) - seg.get("start", 0), 1)
+        orig = seg.get("original", "")
+        trans = seg.get("translated", "")
+        writer.writerow([i + 1, "", label, gender_tag, f"{dur}s", orig, trans])
+    csv_content = output.getvalue()
+    return Response(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="template_{project_id}.csv"'}
+    )
+
 # Import voice MP3s via CSV mapping
 @api_router.post("/projects/{project_id}/import-voices")
 async def import_voices(

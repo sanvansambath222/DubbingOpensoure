@@ -33,7 +33,7 @@ const TimelineEditor = ({
   onOffsetChange, onSeekVideo, videoCurrentTime, onSaveOffsets,
   isPlaying, onPlayPause, onStop,
   onSplitSegment, onChangeSpeaker, onUploadAudio,
-  onDownloadScript, onImportVoices
+  onDownloadScript, onDownloadCsvTemplate, onImportVoices
 }) => {
   const d = isDark;
   const containerRef = useRef(null);
@@ -265,6 +265,10 @@ const TimelineEditor = ({
           <button onClick={onDownloadScript} data-testid="timeline-download-script"
             className={`px-2.5 py-1.5 text-[10px] font-bold rounded-md flex items-center gap-1.5 transition-colors border ${d ? 'text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-500' : 'text-zinc-600 border-zinc-300 hover:bg-zinc-100 hover:border-zinc-400'}`}>
             <DownloadSimple className="w-3.5 h-3.5" weight="bold" /> Script TXT
+          </button>
+          <button onClick={onDownloadCsvTemplate} data-testid="timeline-download-csv"
+            className={`px-2.5 py-1.5 text-[10px] font-bold rounded-md flex items-center gap-1.5 transition-colors border ${d ? 'text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-500' : 'text-zinc-600 border-zinc-300 hover:bg-zinc-100 hover:border-zinc-400'}`}>
+            <DownloadSimple className="w-3.5 h-3.5" weight="bold" /> CSV Template
           </button>
           <button onClick={() => csvInputRef.current?.click()} data-testid="timeline-import-voices"
             className={`px-2.5 py-1.5 text-[10px] font-bold rounded-md flex items-center gap-1.5 transition-colors border ${

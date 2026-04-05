@@ -782,6 +782,23 @@ const Editor = () => {
     } catch { toast.error("Download failed"); }
   };
 
+  const handleDownloadCsvTemplate = async () => {
+    try {
+      const r = await axios.get(`${API}/projects/${projectId}/export-csv-template`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `template_${projectId}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success("CSV template downloaded!");
+    } catch { toast.error("Download failed"); }
+  };
+
+
   const handleImportVoices = async (csvFile, mp3Files) => {
     const formData = new FormData();
     formData.append("csv_file", csvFile);
@@ -1391,6 +1408,7 @@ const Editor = () => {
               onChangeSpeaker={handleTimelineSpeakerChange}
               onUploadAudio={handleTimelineUploadAudio}
               onDownloadScript={handleDownloadScript}
+              onDownloadCsvTemplate={handleDownloadCsvTemplate}
               onImportVoices={handleImportVoices}
             />
           )}
