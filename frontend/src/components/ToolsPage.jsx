@@ -656,6 +656,7 @@ const AddLogoTool = ({ token, d }) => {
   const [logo, setLogo] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [videoPreview, setVideoPreview] = useState(null);
+  const [videoRatio, setVideoRatio] = useState('16/9');
   const [logoPos, setLogoPos] = useState({ x: 80, y: 5 });
   const [logoSize, setLogoSize] = useState(15);
   const [opacity, setOpacity] = useState(100);
@@ -664,7 +665,20 @@ const AddLogoTool = ({ token, d }) => {
   const [dragging, setDragging] = useState(false);
   const previewRef = useRef(null);
 
-  const onVideoSelect = (f) => { setVideo(f); if (f) { setVideoPreview(URL.createObjectURL(f)); } else { setVideoPreview(null); } };
+  const onVideoSelect = (f) => {
+    setVideo(f); setResult(null);
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setVideoPreview(url);
+      const el = document.createElement('video');
+      el.onloadedmetadata = () => {
+        const w = el.videoWidth || 1920;
+        const h = el.videoHeight || 1080;
+        setVideoRatio(`${w}/${h}`);
+      };
+      el.src = url;
+    } else { setVideoPreview(null); setVideoRatio('16/9'); }
+  };
   const onLogoSelect = (f) => { setLogo(f); if (f) { const r = new FileReader(); r.onload = (e) => setLogoPreview(e.target.result); r.readAsDataURL(f); } else { setLogoPreview(null); } };
 
   const handleMouseDown = (e) => { e.preventDefault(); setDragging(true); };
@@ -709,7 +723,7 @@ const AddLogoTool = ({ token, d }) => {
               <span className={`text-[10px] font-bold uppercase tracking-[0.15em] ${d?'text-zinc-400':'text-zinc-500'}`}>Preview Canvas</span>
               <span className={`text-[10px] font-mono ${d?'text-zinc-500':'text-zinc-400'}`}>X:{logoPos.x}% Y:{logoPos.y}%</span>
             </div>
-            <div ref={previewRef} className={`relative w-full ${d?'bg-zinc-900':'bg-zinc-950'}`} style={{ aspectRatio: '16/9', cursor: dragging ? 'grabbing' : 'crosshair' }}>
+            <div ref={previewRef} className={`relative w-full ${d?'bg-zinc-900':'bg-zinc-950'}`} style={{ aspectRatio: videoRatio, maxHeight: '520px', cursor: dragging ? 'grabbing' : 'crosshair' }}>
               {videoPreview ? (
                 <video src={videoPreview} muted className="w-full h-full object-contain" />
               ) : (
@@ -774,6 +788,7 @@ const RemoveLogoTool = ({ token, d }) => {
   const [video, setVideo] = useState(null);
   const [videoPreview, setVideoPreview] = useState(null);
   const [videoDims, setVideoDims] = useState({ w: 1920, h: 1080 });
+  const [videoRatio, setVideoRatio] = useState('16/9');
   const [selection, setSelection] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const [mode, setMode] = useState("blur");
   const [processing, setProcessing] = useState(false);
@@ -790,9 +805,14 @@ const RemoveLogoTool = ({ token, d }) => {
       const url = URL.createObjectURL(f);
       setVideoPreview(url);
       const el = document.createElement('video');
-      el.onloadedmetadata = () => { setVideoDims({ w: el.videoWidth || 1920, h: el.videoHeight || 1080 }); };
+      el.onloadedmetadata = () => {
+        const w = el.videoWidth || 1920;
+        const h = el.videoHeight || 1080;
+        setVideoDims({ w, h });
+        setVideoRatio(`${w}/${h}`);
+      };
       el.src = url;
-    } else { setVideoPreview(null); }
+    } else { setVideoPreview(null); setVideoRatio('16/9'); }
   };
 
   const getRelPos = (e) => {
@@ -872,7 +892,7 @@ const RemoveLogoTool = ({ token, d }) => {
         <div ref={canvasRef}
           onMouseDown={onMouseDown} onTouchStart={onMouseDown}
           className={`relative w-full ${d?'bg-zinc-900':'bg-zinc-950'}`}
-          style={{ minHeight: '420px', aspectRatio: '16/9', cursor: 'crosshair', userSelect: 'none', touchAction: 'none' }}>
+          style={{ minHeight: '420px', aspectRatio: videoRatio, maxHeight: '520px', cursor: 'crosshair', userSelect: 'none', touchAction: 'none' }}>
           {videoPreview ? (
             <video ref={videoRef} src={videoPreview} muted className="w-full h-full object-contain pointer-events-none" />
           ) : (
