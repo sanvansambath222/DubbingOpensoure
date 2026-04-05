@@ -731,6 +731,26 @@ const Editor = () => {
     } catch { toast.error("Failed to change speaker"); }
   };
 
+  const handleTimelineUploadAudio = async (segIdx, file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const r = await axios.post(
+        `${API}/projects/${projectId}/upload-segment-audio?segment_id=${segIdx}`,
+        formData,
+        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" } }
+      );
+      const updated = [...segments];
+      updated[segIdx] = { ...updated[segIdx], custom_audio: r.data.audio_path };
+      setSegments(updated);
+      toast.success(`MP3 uploaded for segment ${segIdx + 1}!`);
+    } catch (e) {
+      const msg = e.response?.data?.detail || "Upload failed";
+      toast.error(msg);
+    }
+  };
+
+
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${d?'bg-zinc-950':'bg-zinc-50'}`}><Spinner className="w-12 h-12 text-zinc-400 animate-spin" /></div>;
 
   const step = getCurrentStep();
@@ -1312,6 +1332,7 @@ const Editor = () => {
               onStop={handleTimelineStop}
               onSplitSegment={splitSegment}
               onChangeSpeaker={handleTimelineSpeakerChange}
+              onUploadAudio={handleTimelineUploadAudio}
             />
           )}
 

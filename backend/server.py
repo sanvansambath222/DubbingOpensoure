@@ -1676,18 +1676,35 @@ async def upload_segment_audio(project_id: str, file: UploadFile = File(...), se
     project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    segments = project.get("segments", [])
+    if segment_id < 0 or segment_id >= len(segments):
+        raise HTTPException(status_code=400, detail="Invalid segment ID")
     data = await file.read()
+    # Check uploaded audio duration vs segment duration
+    seg = segments[segment_id]
+    seg_duration = (seg.get("end", 0) - seg.get("start", 0))
+    try:
+        from pydub import AudioSegment as PydubSeg
+        import io
+        ext = file.filename.split(".")[-1].lower() if "." in file.filename else "wav"
+        audio = PydubSeg.from_file(io.BytesIO(data), format=ext if ext in ("mp3","wav","ogg","flac","m4a","aac") else "mp3")
+        audio_dur = len(audio) / 1000.0
+        tolerance = 1.0  # allow 1 second tolerance
+        if audio_dur > seg_duration + tolerance:
+            raise HTTPException(status_code=400, detail=f"Audio too long! Your MP3 is {audio_dur:.1f}s but segment is {seg_duration:.1f}s. Max allowed: {seg_duration + tolerance:.1f}s")
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # If can't check duration, allow upload anyway
     ext = file.filename.split(".")[-1] if "." in file.filename else "wav"
     path = f"{APP_NAME}/custom_audio/{user.user_id}/{project_id}/segment_{segment_id}_{uuid.uuid4().hex}.{ext}"
     result = put_object(path, data, file.content_type or "audio/wav")
-    segments = project.get("segments", [])
-    if segment_id < len(segments):
-        segments[segment_id]["custom_audio"] = result["path"]
-        await db.projects.update_one(
-            {"project_id": project_id},
-            {"$set": {"segments": segments, "updated_at": datetime.now(timezone.utc).isoformat()}}
-        )
-    return {"audio_path": result["path"], "segment_id": segment_id}
+    segments[segment_id]["custom_audio"] = result["path"]
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"segments": segments, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"audio_path": result["path"], "segment_id": segment_id, "audio_duration": round(audio_dur, 1) if 'audio_dur' in dir() else None}
 
 # Transcribe with segments + speaker detection + smart actor labels
 @api_router.post("/projects/{project_id}/transcribe-segments")

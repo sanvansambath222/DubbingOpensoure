@@ -3,7 +3,7 @@ import {
   GenderMale, GenderFemale, MagnifyingGlassPlus, MagnifyingGlassMinus,
   Waveform, FloppyDisk, ArrowsHorizontal, ArrowCounterClockwise,
   Play, Pause, Stop, DotsSixVertical, Clock, SpeakerHigh,
-  Scissors, UserSwitch, X
+  Scissors, UserSwitch, X, UploadSimple
 } from "@phosphor-icons/react";
 
 const MIN_ZOOM = 8;
@@ -32,7 +32,7 @@ const TimelineEditor = ({
   segments, actors, isDark, totalDuration,
   onOffsetChange, onSeekVideo, videoCurrentTime, onSaveOffsets,
   isPlaying, onPlayPause, onStop,
-  onSplitSegment, onChangeSpeaker
+  onSplitSegment, onChangeSpeaker, onUploadAudio
 }) => {
   const d = isDark;
   const containerRef = useRef(null);
@@ -42,6 +42,7 @@ const TimelineEditor = ({
   const [hoveredSeg, setHoveredSeg] = useState(null);
   const [selectedSeg, setSelectedSeg] = useState(null);
   const [draggingPlayhead, setDraggingPlayhead] = useState(null);
+  const uploadInputRef = useRef(null);
   const hasChanges = Object.values(offsets).some(v => v !== 0);
 
   const duration = useMemo(() => {
@@ -400,7 +401,7 @@ const TimelineEditor = ({
                       <div className="flex-1 min-w-0 flex flex-col justify-center pr-1.5">
                         {width > 50 && (
                           <span className="text-[10px] font-semibold truncate whitespace-nowrap leading-tight">
-                            {seg.translated || seg.original || `#${seg._idx + 1}`}
+                            {seg.custom_audio ? '🎤 ' : ''}{seg.translated || seg.original || `#${seg._idx + 1}`}
                           </span>
                         )}
                         <div className="flex items-center gap-1.5">
@@ -439,6 +440,25 @@ const TimelineEditor = ({
                           className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-all ${d ? 'hover:bg-violet-500/20 text-violet-400' : 'hover:bg-violet-100 text-violet-600'}`}>
                           <Scissors className="w-3.5 h-3.5" weight="bold" /> Split
                         </button>
+                        {/* Upload MP3 button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); uploadInputRef.current?.click(); }}
+                          data-testid={`timeline-upload-${seg._idx}`}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-all ${
+                            seg.custom_audio
+                              ? (d ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600')
+                              : (d ? 'hover:bg-cyan-500/20 text-cyan-400' : 'hover:bg-cyan-100 text-cyan-600')
+                          }`}>
+                          <UploadSimple className="w-3.5 h-3.5" weight="bold" />
+                          {seg.custom_audio ? 'Replace' : 'Upload'}
+                          <span className={`text-[8px] font-mono opacity-60`}>({segDur.toFixed(1)}s)</span>
+                        </button>
+                        <input ref={uploadInputRef} type="file" accept="audio/*" className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) { onUploadAudio?.(seg._idx, f, segDur); }
+                            e.target.value = '';
+                          }} />
                         {/* Divider */}
                         <div className={`w-px h-5 ${d ? 'bg-zinc-600' : 'bg-zinc-200'}`} />
                         {/* Actor picker */}
