@@ -131,6 +131,17 @@ const DownloadBtn = ({ url, label, d }) => (
   </a>
 );
 
+const ResultArea = ({ result, telegramSent, label, d }) => (
+  <div className="space-y-2">
+    {telegramSent && (
+      <div className={`rounded-xl p-3 text-center ${d?'bg-emerald-500/10 border border-emerald-500/30':'bg-emerald-50 border border-emerald-300'}`} data-testid="telegram-sent-badge">
+        <span className={`text-sm font-bold ${d?'text-emerald-400':'text-emerald-700'}`}>Sent to your Telegram!</span>
+      </div>
+    )}
+    {result && !telegramSent && <DownloadBtn url={result} label={label || "Download"} d={d} />}
+  </div>
+);
+
 // ---- Voice Replace Tool ----
 const VoiceReplaceTool = ({ token, d }) => {
   const [video, setVideo] = useState(null);
@@ -140,6 +151,7 @@ const VoiceReplaceTool = ({ token, d }) => {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState(null);
+  const [telegramSent, setTelegramSent] = useState(false);
   const [allVoices, setAllVoices] = useState([]);
   const [voiceSearch, setVoiceSearch] = useState("");
 
@@ -186,7 +198,8 @@ const VoiceReplaceTool = ({ token, d }) => {
         onUploadProgress: (p) => { if(p.loaded === p.total) setProgress("Processing... (this may take 1-3 min)"); }
       });
       setResult(r.data.download_url);
-      toast.success("Voice replaced!");
+      setTelegramSent(!!r.data.telegram_sent);
+      toast.success(r.data.telegram_sent ? "Voice replaced! Sent to Telegram!" : "Voice replaced!");
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); setProgress(""); }
   };
@@ -222,7 +235,7 @@ const VoiceReplaceTool = ({ token, d }) => {
       </div>
       {progress && <div className={`text-xs text-center py-2 rounded-lg ${d?'text-cyan-400 bg-cyan-500/5':'text-cyan-600 bg-cyan-50'}`}>{progress}</div>}
       <ProcessBtn onClick={handleProcess} processing={processing} label="Replace Voice" procLabel={progress || "Processing..."} color="from-cyan-500 to-cyan-600" d={d} />
-      {result && <DownloadBtn url={result} label="Download Result" d={d} />}
+      <ResultArea result={result} telegramSent={telegramSent} label="Download Result" d={d} />
     </div>
   );
 };
@@ -233,6 +246,7 @@ const SubtitlesTool = ({ token, d }) => {
   const [srt, setSrt] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [telegramSent, setTelegramSent] = useState(false);
   const [fontSize, setFontSize] = useState(24);
   const [fontColor, setFontColor] = useState("white");
   const [position, setPosition] = useState("bottom");
@@ -246,7 +260,8 @@ const SubtitlesTool = ({ token, d }) => {
       fd.append("font_size", fontSize); fd.append("font_color", fontColor); fd.append("position", position);
       const r = await axios.post(`${API}/tools/add-subtitles`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
-      toast.success("Subtitles added!");
+      setTelegramSent(!!r.data.telegram_sent);
+      toast.success(r.data.telegram_sent ? "Subtitles added! Sent to Telegram!" : "Subtitles added!");
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); }
   };
@@ -272,7 +287,7 @@ const SubtitlesTool = ({ token, d }) => {
         ]} d={d} />
       </div>
       <ProcessBtn onClick={handleProcess} processing={processing} label="Burn Subtitles" color="from-violet-500 to-purple-600" d={d} />
-      {result && <DownloadBtn url={result} label="Download Video" d={d} />}
+      <ResultArea result={result} telegramSent={telegramSent} label="Download Video" d={d} />
     </div>
   );
 };
@@ -343,6 +358,7 @@ const TrimTool = ({ token, d }) => {
   const [endTime, setEndTime] = useState("00:00:30");
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [telegramSent, setTelegramSent] = useState(false);
 
   const handleTrim = async () => {
     if (!video) return toast.error("Upload a video");
@@ -352,7 +368,8 @@ const TrimTool = ({ token, d }) => {
       fd.append("video", video); fd.append("start_time", startTime); fd.append("end_time", endTime);
       const r = await axios.post(`${API}/tools/trim-video`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
-      toast.success("Video trimmed!");
+      setTelegramSent(!!r.data.telegram_sent);
+      toast.success(r.data.telegram_sent ? "Trimmed! Sent to Telegram!" : "Video trimmed!");
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); }
   };
@@ -374,7 +391,7 @@ const TrimTool = ({ token, d }) => {
         <TimeInput label="End Time" value={endTime} onChange={setEndTime} />
       </div>
       <ProcessBtn onClick={handleTrim} processing={processing} label="Trim Video" color="from-amber-500 to-orange-600" d={d} />
-      {result && <DownloadBtn url={result} label="Download Trimmed" d={d} />}
+      <ResultArea result={result} telegramSent={telegramSent} label="Download Trimmed" d={d} />
     </div>
   );
 };
@@ -580,6 +597,7 @@ const ResizeTool = ({ token, d }) => {
   const [preset, setPreset] = useState("1920:1080");
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [telegramSent, setTelegramSent] = useState(false);
 
   const presets = [
     { value: "1920:1080", label: "1920x1080 (16:9 Landscape)" },
@@ -598,7 +616,8 @@ const ResizeTool = ({ token, d }) => {
       fd.append("video", video); fd.append("resolution", preset);
       const r = await axios.post(`${API}/tools/resize-video`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
-      toast.success("Video resized!");
+      setTelegramSent(!!r.data.telegram_sent);
+      toast.success(r.data.telegram_sent ? "Resized! Sent to Telegram!" : "Video resized!");
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); }
   };
@@ -608,7 +627,7 @@ const ResizeTool = ({ token, d }) => {
       <DropZone accept="video/*" label="Upload Video" icon={FileVideo} file={video} onFile={setVideo} d={d} />
       <Select label="Target Size" value={preset} onChange={setPreset} options={presets} d={d} />
       <ProcessBtn onClick={handleResize} processing={processing} label="Resize Video" color="from-blue-500 to-indigo-600" d={d} />
-      {result && <DownloadBtn url={result} label="Download Resized" d={d} />}
+      <ResultArea result={result} telegramSent={telegramSent} label="Download Resized" d={d} />
     </div>
   );
 };
@@ -619,6 +638,7 @@ const ConvertTool = ({ token, d }) => {
   const [format, setFormat] = useState("mp4");
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [telegramSent, setTelegramSent] = useState(false);
 
   const formats = [
     { value: "mp4", label: "MP4 (Video)" }, { value: "mov", label: "MOV (Video)" },
@@ -635,7 +655,8 @@ const ConvertTool = ({ token, d }) => {
       fd.append("video", video); fd.append("output_format", format);
       const r = await axios.post(`${API}/tools/convert-video`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
-      toast.success("Converted!");
+      setTelegramSent(!!r.data.telegram_sent);
+      toast.success(r.data.telegram_sent ? "Converted! Sent to Telegram!" : "Converted!");
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); }
   };
@@ -645,7 +666,7 @@ const ConvertTool = ({ token, d }) => {
       <DropZone accept="video/*,audio/*" label="Upload Video or Audio" icon={FileVideo} file={video} onFile={setVideo} d={d} />
       <Select label="Output Format" value={format} onChange={setFormat} options={formats} d={d} />
       <ProcessBtn onClick={handleConvert} processing={processing} label="Convert" color="from-orange-500 to-red-600" d={d} />
-      {result && <DownloadBtn url={result} label="Download" d={d} />}
+      <ResultArea result={result} telegramSent={telegramSent} label="Download" d={d} />
     </div>
   );
 };
@@ -662,6 +683,7 @@ const AddLogoTool = ({ token, d }) => {
   const [opacity, setOpacity] = useState(100);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [telegramSent, setTelegramSent] = useState(false);
   const [dragging, setDragging] = useState(false);
   const previewRef = useRef(null);
 
@@ -706,7 +728,8 @@ const AddLogoTool = ({ token, d }) => {
       fd.append("logo_size", logoSize); fd.append("opacity", opacity);
       const r = await axios.post(`${API}/tools/add-logo`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       setResult(r.data.download_url);
-      toast.success("Logo added!");
+      setTelegramSent(!!r.data.telegram_sent);
+      toast.success(r.data.telegram_sent ? "Logo added! Sent to Telegram!" : "Logo added!");
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setProcessing(false); }
   };
@@ -775,8 +798,8 @@ const AddLogoTool = ({ token, d }) => {
             <input type="range" min={10} max={100} value={opacity} onChange={e => setOpacity(Number(e.target.value))} className="w-full accent-pink-500" />
           </div>
 
-          <ProcessBtn onClick={handleProcess} processing={processing} label="Add Logo & Download" color="from-pink-500 to-rose-600" d={d} />
-          {result && <DownloadBtn url={result} label="Download Video" d={d} />}
+          <ProcessBtn onClick={handleProcess} processing={processing} label="Add Logo" color="from-pink-500 to-rose-600" d={d} />
+          <ResultArea result={result} telegramSent={telegramSent} label="Download Video" d={d} />
         </div>
       </div>
     </div>
@@ -943,12 +966,7 @@ const RemoveLogoTool = ({ token, d }) => {
         </div>
         <div className="space-y-3">
           <ProcessBtn onClick={handleProcess} processing={processing} label="Remove Logo" color="from-rose-500 to-red-600" d={d} />
-          {telegramSent && (
-            <div className={`rounded-xl p-3 text-center ${d?'bg-emerald-500/10 border border-emerald-500/30':'bg-emerald-50 border border-emerald-300'}`} data-testid="telegram-sent-badge">
-              <span className={`text-sm font-bold ${d?'text-emerald-400':'text-emerald-700'}`}>Sent to your Telegram!</span>
-            </div>
-          )}
-          {result && !telegramSent && <DownloadBtn url={result} label="Download Clean Video" d={d} />}
+          <ResultArea result={result} telegramSent={telegramSent} label="Download Clean Video" d={d} />
         </div>
       </div>
     </div>

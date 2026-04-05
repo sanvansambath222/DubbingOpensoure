@@ -863,6 +863,24 @@ async def send_telegram_message(chat_id: int, text: str, reply_markup=None):
         logger.error(f"Telegram message error: {e}")
         return False
 
+
+async def _tool_send_telegram(user_id: str, out_path: str, tool_name: str):
+    """Send a tool output file to the user's Telegram and delete local file. Returns True if sent."""
+    try:
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        tg_chat_id = user_doc.get("telegram_chat_id") if user_doc else None
+        if tg_chat_id and os.path.exists(out_path):
+            caption = f"{tool_name}\nvoxidub.com"
+            sent = await send_telegram_video(tg_chat_id, out_path, caption)
+            if sent:
+                try: os.unlink(out_path)
+                except: pass
+                return True
+    except Exception as e:
+        logger.error(f"Tool telegram send error: {e}")
+    return False
+
+
 async def run_telegram_polling():
     """Background task: poll Telegram for link codes from users."""
     if not TELEGRAM_BOT_TOKEN:
@@ -3249,7 +3267,7 @@ async def check_video_duration(video_path: str):
 async def tool_add_subtitles(video: UploadFile = File(...), srt: UploadFile = File(...),
     font_size: int = Form(24), font_color: str = Form("white"), position: str = Form("bottom"),
     authorization: str = Header(None)):
-    await get_current_user(authorization)
+    user = await get_current_user(authorization)
     with tempfile.TemporaryDirectory() as tmp:
         vid_path = os.path.join(tmp, f"input_{video.filename}")
         srt_path = os.path.join(tmp, f"subs.srt")
@@ -3264,7 +3282,8 @@ async def tool_add_subtitles(video: UploadFile = File(...), srt: UploadFile = Fi
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
-    return {"download_url": f"/api/tools/download/{out_name}"}
+    tg = await _tool_send_telegram(user.user_id, out_path, "Add Subtitles")
+    return {"download_url": f"/api/tools/download/{out_name}", "telegram_sent": tg}
 
 # 2. Translate SRT
 @api_router.post("/tools/translate-srt")
@@ -3318,7 +3337,7 @@ async def tool_translate_text(req: TranslateTextReq, authorization: str = Header
 @api_router.post("/tools/trim-video")
 async def tool_trim_video(video: UploadFile = File(...), start_time: str = Form("00:00:00"), end_time: str = Form("00:00:30"),
     authorization: str = Header(None)):
-    await get_current_user(authorization)
+    user = await get_current_user(authorization)
     with tempfile.TemporaryDirectory() as tmp:
         vid_path = os.path.join(tmp, f"input_{video.filename}")
         ext = video.filename.split(".")[-1] if "." in video.filename else "mp4"
@@ -3330,7 +3349,8 @@ async def tool_trim_video(video: UploadFile = File(...), start_time: str = Form(
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
-    return {"download_url": f"/api/tools/download/{out_name}"}
+    tg = await _tool_send_telegram(user.user_id, out_path, "Trim Video")
+    return {"download_url": f"/api/tools/download/{out_name}", "telegram_sent": tg}
 
 # 4. AI Clips
 @api_router.post("/tools/ai-clips")
@@ -3338,7 +3358,7 @@ async def tool_ai_clips(video: UploadFile = File(...), clip_count: int = Form(3)
     authorization: str = Header(None)):
     from emergentintegrations.llm.openai import OpenAISpeechToText
     from emergentintegrations.llm.chat import LlmChat, UserMessage
-    await get_current_user(authorization)
+    user = await get_current_user(authorization)
     with tempfile.TemporaryDirectory() as tmp:
         vid_path = os.path.join(tmp, f"input_{video.filename}")
         audio_path = os.path.join(tmp, "audio.wav")
@@ -3382,6 +3402,10 @@ Return ONLY a JSON array: [{{"start": 10.0, "end": 40.0, "reason": "..."}}]""")
             cmd = ["ffmpeg", "-y", "-i", vid_path, "-ss", str(start), "-to", str(end), "-c", "copy", clip_path]
             subprocess.run(cmd, capture_output=True)
             output_clips.append({"url": f"/api/tools/download/{clip_name}", "start": round(start, 1), "end": round(end, 1)})
+        # Send clips to Telegram
+        for c in output_clips:
+            clip_file = str(TOOLS_OUTPUT_DIR / c["url"].split("/")[-1])
+            await _tool_send_telegram(user.user_id, clip_file, f"AI Clip ({c['start']}s-{c['end']}s)")
     return {"clips": output_clips}
 
 # 5. Text to Speech
@@ -3417,7 +3441,7 @@ async def tool_text_to_speech(req: TTSReq, authorization: str = Header(None)):
 @api_router.post("/tools/resize-video")
 async def tool_resize_video(video: UploadFile = File(...), resolution: str = Form("1920:1080"),
     authorization: str = Header(None)):
-    await get_current_user(authorization)
+    user = await get_current_user(authorization)
     with tempfile.TemporaryDirectory() as tmp:
         vid_path = os.path.join(tmp, f"input_{video.filename}")
         out_name = f"resized_{uuid.uuid4().hex[:8]}.mp4"
@@ -3428,13 +3452,14 @@ async def tool_resize_video(video: UploadFile = File(...), resolution: str = For
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
-    return {"download_url": f"/api/tools/download/{out_name}"}
+    tg = await _tool_send_telegram(user.user_id, out_path, "Resize Video")
+    return {"download_url": f"/api/tools/download/{out_name}", "telegram_sent": tg}
 
 # 7. Convert Video
 @api_router.post("/tools/convert-video")
 async def tool_convert_video(video: UploadFile = File(...), output_format: str = Form("mp4"),
     authorization: str = Header(None)):
-    await get_current_user(authorization)
+    user = await get_current_user(authorization)
     with tempfile.TemporaryDirectory() as tmp:
         vid_path = os.path.join(tmp, f"input_{video.filename}")
         out_name = f"converted_{uuid.uuid4().hex[:8]}.{output_format}"
@@ -3448,7 +3473,8 @@ async def tool_convert_video(video: UploadFile = File(...), output_format: str =
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
-    return {"download_url": f"/api/tools/download/{out_name}"}
+    tg = await _tool_send_telegram(user.user_id, out_path, "Convert Video")
+    return {"download_url": f"/api/tools/download/{out_name}", "telegram_sent": tg}
 
 # Tools file download
 @api_router.get("/tools/download/{filename}")
@@ -3555,7 +3581,8 @@ async def tool_voice_replace(video: UploadFile = File(...), extra_text: str = Fo
             subprocess.run(cmd_mix, capture_output=True)
         
         logger.info(f"Voice Replace: Done! Output: {out_name}")
-    return {"download_url": f"/api/tools/download/{out_name}"}
+    tg = await _tool_send_telegram(user.user_id, str(TOOLS_OUTPUT_DIR / out_name), "Voice Replace")
+    return {"download_url": f"/api/tools/download/{out_name}", "telegram_sent": tg}
 
 # 9. Add Logo
 @api_router.post("/tools/add-logo")
@@ -3563,7 +3590,7 @@ async def tool_add_logo(video: UploadFile = File(...), logo: UploadFile = File(.
     position_x: int = Form(80), position_y: int = Form(5),
     logo_size: int = Form(15), opacity: int = Form(100),
     authorization: str = Header(None)):
-    await get_current_user(authorization)
+    user = await get_current_user(authorization)
     with tempfile.TemporaryDirectory() as tmp:
         vid_path = os.path.join(tmp, f"input_{video.filename}")
         logo_path = os.path.join(tmp, f"logo_{logo.filename}")
@@ -3596,7 +3623,8 @@ async def tool_add_logo(video: UploadFile = File(...), logo: UploadFile = File(.
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
-    return {"download_url": f"/api/tools/download/{out_name}"}
+    tg = await _tool_send_telegram(user.user_id, out_path, "Add Logo")
+    return {"download_url": f"/api/tools/download/{out_name}", "telegram_sent": tg}
 
 # 10. Remove Logo
 @api_router.post("/tools/remove-logo")
@@ -3653,24 +3681,8 @@ async def tool_remove_logo(video: UploadFile = File(...),
         if r.returncode != 0:
             raise HTTPException(status_code=500, detail=f"FFmpeg error: {r.stderr[:300]}")
     
-    # Send to Telegram if user has connected
-    telegram_sent = False
-    user_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
-    tg_chat_id = user_doc.get("telegram_chat_id") if user_doc else None
-    if tg_chat_id and os.path.exists(out_path):
-        caption = f"Logo Removed ({mode})\nvoxidub.com"
-        telegram_sent = await send_telegram_video(tg_chat_id, out_path, caption)
-        if telegram_sent:
-            # Delete file after sending to save disk
-            try:
-                os.unlink(out_path)
-            except Exception:
-                pass
-    
-    return {
-        "download_url": f"/api/tools/download/{out_name}",
-        "telegram_sent": telegram_sent,
-    }
+    tg = await _tool_send_telegram(user.user_id, out_path, f"Remove Logo ({mode})")
+    return {"download_url": f"/api/tools/download/{out_name}", "telegram_sent": tg}
 
 # ===== License System (for Desktop .exe) =====
 class LicenseCheckReq(BaseModel):
