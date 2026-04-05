@@ -3,7 +3,7 @@ import {
   GenderMale, GenderFemale, MagnifyingGlassPlus, MagnifyingGlassMinus,
   Waveform, FloppyDisk, ArrowsHorizontal, ArrowCounterClockwise,
   Play, Pause, Stop, DotsSixVertical, Clock, SpeakerHigh,
-  Scissors, UserSwitch, X, UploadSimple
+  Scissors, UserSwitch, X, UploadSimple, DownloadSimple, FileText
 } from "@phosphor-icons/react";
 
 const MIN_ZOOM = 8;
@@ -32,7 +32,8 @@ const TimelineEditor = ({
   segments, actors, isDark, totalDuration,
   onOffsetChange, onSeekVideo, videoCurrentTime, onSaveOffsets,
   isPlaying, onPlayPause, onStop,
-  onSplitSegment, onChangeSpeaker, onUploadAudio
+  onSplitSegment, onChangeSpeaker, onUploadAudio,
+  onDownloadScript, onImportVoices
 }) => {
   const d = isDark;
   const containerRef = useRef(null);
@@ -44,6 +45,11 @@ const TimelineEditor = ({
   const [draggingPlayhead, setDraggingPlayhead] = useState(null);
   const [splitPicker, setSplitPicker] = useState(null); // { segIdx, part1Text, part2Text }
   const uploadInputRef = useRef(null);
+  const csvInputRef = useRef(null);
+  const mp3InputRef = useRef(null);
+  const [importCsv, setImportCsv] = useState(null);
+  const [importMp3s, setImportMp3s] = useState(null);
+  const [importing, setImporting] = useState(false);
   const hasChanges = Object.values(offsets).some(v => v !== 0);
 
   const duration = useMemo(() => {
@@ -252,6 +258,39 @@ const TimelineEditor = ({
             <MagnifyingGlassPlus className="w-4 h-4" />
           </button>
           <span className={`text-[9px] font-mono ml-1.5 ${d ? 'text-zinc-600' : 'text-zinc-400'}`}>{zoom}px/s</span>
+        </div>
+
+        {/* Script & Voice Import */}
+        <div className={`flex items-center gap-1 ml-4 pl-4 border-l ${d ? 'border-zinc-700' : 'border-zinc-200'}`}>
+          <button onClick={onDownloadScript} data-testid="timeline-download-script"
+            className={`px-2.5 py-1.5 text-[10px] font-bold rounded-md flex items-center gap-1.5 transition-colors border ${d ? 'text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-500' : 'text-zinc-600 border-zinc-300 hover:bg-zinc-100 hover:border-zinc-400'}`}>
+            <DownloadSimple className="w-3.5 h-3.5" weight="bold" /> Script TXT
+          </button>
+          <button onClick={() => csvInputRef.current?.click()} data-testid="timeline-import-voices"
+            className={`px-2.5 py-1.5 text-[10px] font-bold rounded-md flex items-center gap-1.5 transition-colors border ${
+              importing
+                ? (d ? 'bg-cyan-900/30 border-cyan-600 text-cyan-300' : 'bg-cyan-50 border-cyan-400 text-cyan-600')
+                : (d ? 'text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-500' : 'text-zinc-600 border-zinc-300 hover:bg-zinc-100 hover:border-zinc-400')
+            }`}>
+            <FileText className="w-3.5 h-3.5" weight="bold" /> {importing ? 'Importing...' : 'Import CSV+MP3'}
+          </button>
+          <input ref={csvInputRef} type="file" accept=".csv" className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) { setImportCsv(f); mp3InputRef.current?.click(); }
+              e.target.value = '';
+            }} />
+          <input ref={mp3InputRef} type="file" accept="audio/*" multiple className="hidden"
+            onChange={async (e) => {
+              const files = Array.from(e.target.files || []);
+              if (files.length && importCsv) {
+                setImporting(true);
+                await onImportVoices?.(importCsv, files);
+                setImporting(false);
+                setImportCsv(null);
+              }
+              e.target.value = '';
+            }} />
         </div>
 
         {/* Right: Actions */}

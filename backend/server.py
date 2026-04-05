@@ -1714,6 +1714,120 @@ async def upload_segment_audio(project_id: str, file: UploadFile = File(...), se
     )
     return {"audio_path": result["path"], "segment_id": segment_id, "audio_duration": round(audio_dur, 1) if 'audio_dur' in dir() else None}
 
+# Export dubbing script as TXT for translation
+@api_router.get("/projects/{project_id}/export-script")
+async def export_script(project_id: str, authorization: str = Header(None)):
+    user = await get_current_user(authorization)
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    segments = project.get("segments", [])
+    actors_map = {a["id"]: a for a in project.get("actors", [])}
+    lines = []
+    lines.append(f"# VoxiDub Script - {project.get('title', project_id)}")
+    lines.append(f"# Target Language: {project.get('target_language', 'km')}")
+    lines.append(f"# Total Segments: {len(segments)}")
+    lines.append(f"# Format: [LINE] [START-END] [DURATION] [SPEAKER] [GENDER] | ORIGINAL | TRANSLATED")
+    lines.append("=" * 80)
+    lines.append("")
+    for i, seg in enumerate(segments):
+        start = seg.get("start", 0)
+        end = seg.get("end", 0)
+        dur = end - start
+        speaker_id = seg.get("speaker", "")
+        actor = actors_map.get(speaker_id, {})
+        label = actor.get("label", speaker_id)
+        gender = seg.get("gender", actor.get("gender", "unknown"))
+        gender_tag = "Boy" if gender == "male" else "Girl" if gender == "female" else "?"
+        orig = seg.get("original", "")
+        trans = seg.get("translated", "")
+        lines.append(f"LINE {i+1:03d} | {start:.1f}s - {end:.1f}s | {dur:.1f}s | [{label}] ({gender_tag})")
+        lines.append(f"  Original:   {orig}")
+        lines.append(f"  Translated: {trans}")
+        lines.append("")
+    txt_content = "\n".join(lines)
+    return Response(
+        content=txt_content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="script_{project_id}.txt"'}
+    )
+
+# Import voice MP3s via CSV mapping
+@api_router.post("/projects/{project_id}/import-voices")
+async def import_voices(
+    project_id: str,
+    csv_file: UploadFile = File(...),
+    audio_files: list[UploadFile] = File(...),
+    authorization: str = Header(None)
+):
+    user = await get_current_user(authorization)
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    segments = project.get("segments", [])
+    # Parse CSV: expect columns like "line,mp3_file" or "line,mp3_file,speaker"
+    import csv, io
+    csv_data = (await csv_file.read()).decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(csv_data))
+    # Build filename→file map from uploaded audio files
+    file_map = {}
+    for af in audio_files:
+        file_map[af.filename] = af
+    results = []
+    errors = []
+    for row in reader:
+        line_num = row.get("line", "").strip()
+        mp3_name = row.get("mp3_file", "").strip()
+        speaker = row.get("speaker", "").strip()
+        if not line_num or not mp3_name:
+            continue
+        try:
+            idx = int(line_num) - 1  # CSV uses 1-based line numbers
+        except ValueError:
+            errors.append(f"Invalid line number: {line_num}")
+            continue
+        if idx < 0 or idx >= len(segments):
+            errors.append(f"Line {line_num}: out of range (max {len(segments)})")
+            continue
+        if mp3_name not in file_map:
+            errors.append(f"Line {line_num}: file '{mp3_name}' not found in upload")
+            continue
+        # Validate duration
+        audio_file = file_map[mp3_name]
+        audio_data = await audio_file.read()
+        await audio_file.seek(0)  # Reset for potential re-read
+        seg = segments[idx]
+        seg_duration = seg.get("end", 0) - seg.get("start", 0)
+        try:
+            from pydub import AudioSegment as PydubSeg
+            ext = mp3_name.split(".")[-1].lower() if "." in mp3_name else "mp3"
+            audio = PydubSeg.from_file(io.BytesIO(audio_data), format=ext if ext in ("mp3","wav","ogg","flac","m4a","aac") else "mp3")
+            audio_dur = len(audio) / 1000.0
+            if audio_dur > seg_duration + 1.5:
+                errors.append(f"Line {line_num}: MP3 is {audio_dur:.1f}s but segment is {seg_duration:.1f}s (too long)")
+                continue
+        except Exception:
+            pass
+        # Upload to storage
+        ext = mp3_name.split(".")[-1] if "." in mp3_name else "mp3"
+        path = f"{APP_NAME}/custom_audio/{user.user_id}/{project_id}/segment_{idx}_{uuid.uuid4().hex}.{ext}"
+        result = put_object(path, audio_data, "audio/mpeg")
+        segments[idx]["custom_audio"] = result["path"]
+        # Update speaker if provided
+        if speaker:
+            actors = project.get("actors", [])
+            matched = [a for a in actors if a.get("label", "").lower() == speaker.lower() or a.get("id", "") == speaker]
+            if matched:
+                segments[idx]["speaker"] = matched[0]["id"]
+                segments[idx]["gender"] = matched[0].get("gender", segments[idx].get("gender"))
+        results.append(f"Line {line_num}: {mp3_name} → OK")
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$set": {"segments": segments, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"success": len(results), "errors": errors, "details": results}
+
+
 # Transcribe with segments + speaker detection + smart actor labels
 @api_router.post("/projects/{project_id}/transcribe-segments")
 async def transcribe_segments(project_id: str, authorization: str = Header(None)):

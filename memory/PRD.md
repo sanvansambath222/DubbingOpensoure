@@ -56,7 +56,8 @@ Build a video/audio dubbing platform with AI transcription, translation, TTS voi
 
 - [x] **Timeline BG Playback** — Play/Pause/Stop buttons on timeline to hear background audio while dragging segments, red playhead auto-scrolls to follow playback position (2026-04-05)
 - [x] **Timeline Upload MP3** — Upload custom MP3 per segment on timeline toolbar. Backend validates duration (must fit segment time + 1s tolerance). Shows mic icon on blocks with custom audio. (2026-04-05)
-- [x] **Split Speaker Picker** — After clicking Split, popup shows both parts with text preview. Pick speaker (Boy/Girl) for each part before confirming. Auto-assigns speakers after split. (2026-04-05)
+- [x] **Download Script TXT** — Export all segments as TXT with speaker roles (Father/Wife/Doctor), gender, timestamps, original + translated text. Professional dubbing script format. (2026-04-05)
+- [x] **Import CSV + MP3 Voices** — Upload CSV mapping (line→mp3_file→speaker) + multiple MP3 files. Backend validates duration, assigns to correct segments. Bulk voice import for professional workflow. (2026-04-05)
 
 ## Upcoming Tasks
 - [ ] ABA PayWay Payment Integration (blocked: waiting for sandbox API keys from user) — P1

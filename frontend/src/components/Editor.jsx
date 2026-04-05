@@ -766,6 +766,47 @@ const Editor = () => {
     }
   };
 
+  const handleDownloadScript = async () => {
+    try {
+      const r = await axios.get(`${API}/projects/${projectId}/export-script`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `script_${projectId}.txt`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success("Script downloaded!");
+    } catch { toast.error("Download failed"); }
+  };
+
+  const handleImportVoices = async (csvFile, mp3Files) => {
+    const formData = new FormData();
+    formData.append("csv_file", csvFile);
+    mp3Files.forEach(f => formData.append("audio_files", f));
+    try {
+      const r = await axios.post(
+        `${API}/projects/${projectId}/import-voices`,
+        formData,
+        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" } }
+      );
+      // Refresh project data
+      const proj = await axios.get(`${API}/projects/${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
+      setSegments(proj.data.segments || []);
+      const res = r.data;
+      if (res.errors?.length) {
+        toast.error(`${res.success} imported, ${res.errors.length} errors`);
+      } else {
+        toast.success(`${res.success} voices imported!`);
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Import failed");
+    }
+  };
+
+
 
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${d?'bg-zinc-950':'bg-zinc-50'}`}><Spinner className="w-12 h-12 text-zinc-400 animate-spin" /></div>;
 
@@ -1349,6 +1390,8 @@ const Editor = () => {
               onSplitSegment={splitSegment}
               onChangeSpeaker={handleTimelineSpeakerChange}
               onUploadAudio={handleTimelineUploadAudio}
+              onDownloadScript={handleDownloadScript}
+              onImportVoices={handleImportVoices}
             />
           )}
 
