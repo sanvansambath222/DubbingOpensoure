@@ -65,6 +65,7 @@ const Editor = () => {
   const [showTimeline, setShowTimeline] = useState(false);
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordTimerRef = useRef(null);
@@ -655,15 +656,42 @@ const Editor = () => {
     if (!vid) return;
     const onTimeUpdate = () => setVideoCurrentTime(vid.currentTime);
     const onDurationChange = () => setVideoDuration(vid.duration || 0);
+    const onPlay = () => setIsTimelinePlaying(true);
+    const onPause = () => setIsTimelinePlaying(false);
+    const onEnded = () => setIsTimelinePlaying(false);
     vid.addEventListener('timeupdate', onTimeUpdate);
     vid.addEventListener('loadedmetadata', onDurationChange);
     vid.addEventListener('durationchange', onDurationChange);
+    vid.addEventListener('play', onPlay);
+    vid.addEventListener('pause', onPause);
+    vid.addEventListener('ended', onEnded);
     return () => {
       vid.removeEventListener('timeupdate', onTimeUpdate);
       vid.removeEventListener('loadedmetadata', onDurationChange);
       vid.removeEventListener('durationchange', onDurationChange);
+      vid.removeEventListener('play', onPlay);
+      vid.removeEventListener('pause', onPause);
+      vid.removeEventListener('ended', onEnded);
     };
   }, [originalVideoUrl]);
+
+  const handleTimelinePlayPause = () => {
+    const vid = originalVideoRef.current;
+    if (!vid) return;
+    if (vid.paused) {
+      vid.play().catch(() => {});
+    } else {
+      vid.pause();
+    }
+  };
+
+  const handleTimelineStop = () => {
+    const vid = originalVideoRef.current;
+    if (!vid) return;
+    vid.pause();
+    vid.currentTime = 0;
+    setVideoCurrentTime(0);
+  };
 
   const handleTimelineOffsetChange = (segIdx, offset) => {
     const updated = [...segments];
@@ -1268,6 +1296,9 @@ const Editor = () => {
               onSeekVideo={handleTimelineSeek}
               videoCurrentTime={videoCurrentTime}
               onSaveOffsets={handleSaveTimeline}
+              isPlaying={isTimelinePlaying}
+              onPlayPause={handleTimelinePlayPause}
+              onStop={handleTimelineStop}
             />
           )}
 

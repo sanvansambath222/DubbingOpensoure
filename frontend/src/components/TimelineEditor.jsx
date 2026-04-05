@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import {
   GenderMale, GenderFemale, MagnifyingGlassPlus, MagnifyingGlassMinus,
-  Waveform, FloppyDisk, ArrowsHorizontal, ArrowCounterClockwise, Play
+  Waveform, FloppyDisk, ArrowsHorizontal, ArrowCounterClockwise, Play, Pause, Stop
 } from "@phosphor-icons/react";
 
 const MIN_ZOOM = 5;
@@ -19,7 +19,8 @@ const formatTime = (sec) => {
 
 const TimelineEditor = ({
   segments, actors, isDark, totalDuration,
-  onOffsetChange, onSeekVideo, videoCurrentTime, onSaveOffsets
+  onOffsetChange, onSeekVideo, videoCurrentTime, onSaveOffsets,
+  isPlaying, onPlayPause, onStop
 }) => {
   const d = isDark;
   const containerRef = useRef(null);
@@ -118,6 +119,17 @@ const TimelineEditor = ({
   const playheadX = (videoCurrentTime || 0) * zoom + LABEL_WIDTH;
   const totalHeight = (tracks.length + 1) * TRACK_HEIGHT + RULER_HEIGHT + 12;
 
+  // Auto-scroll to keep playhead visible while playing
+  useEffect(() => {
+    if (!isPlaying || !containerRef.current) return;
+    const container = containerRef.current;
+    const scrollLeft = container.scrollLeft;
+    const viewWidth = container.clientWidth;
+    if (playheadX < scrollLeft + LABEL_WIDTH + 20 || playheadX > scrollLeft + viewWidth - 40) {
+      container.scrollLeft = Math.max(0, playheadX - viewWidth * 0.3);
+    }
+  }, [playheadX, isPlaying]);
+
   return (
     <div className={`border-b select-none ${d ? 'bg-zinc-950/60 border-zinc-800' : 'bg-zinc-50 border-black/8'}`} data-testid="timeline-editor">
       {/* Controls */}
@@ -126,6 +138,27 @@ const TimelineEditor = ({
           <ArrowsHorizontal className={`w-3.5 h-3.5 ${d ? 'text-cyan-400' : 'text-cyan-600'}`} weight="bold" />
           <span className={`text-[10px] font-bold uppercase tracking-widest ${d ? 'text-zinc-400' : 'text-zinc-500'}`}>
             Timeline
+          </span>
+        </div>
+
+        {/* Play / Pause / Stop */}
+        <div className="flex items-center gap-0.5 ml-2">
+          <button onClick={onPlayPause} data-testid="timeline-play-btn"
+            className={`w-7 h-7 rounded-md flex items-center justify-center transition-all ${
+              isPlaying
+                ? (d ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-amber-100 text-amber-600 hover:bg-amber-200')
+                : (d ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200')
+            }`}>
+            {isPlaying
+              ? <Pause className="w-3.5 h-3.5" weight="fill" />
+              : <Play className="w-3.5 h-3.5" weight="fill" />}
+          </button>
+          <button onClick={onStop} data-testid="timeline-stop-btn"
+            className={`w-7 h-7 rounded-md flex items-center justify-center transition-all ${d ? 'text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300' : 'text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600'}`}>
+            <Stop className="w-3.5 h-3.5" weight="fill" />
+          </button>
+          <span className={`text-[10px] font-mono ml-1 tabular-nums ${d ? 'text-zinc-300' : 'text-zinc-600'}`}>
+            {formatTime(videoCurrentTime || 0)}
           </span>
         </div>
 
@@ -280,10 +313,12 @@ const TimelineEditor = ({
                 data-testid="timeline-bg-track">
                 <div className={`absolute left-0 top-0 bottom-0 flex flex-col items-center justify-center z-10 ${d ? 'bg-zinc-900/90' : 'bg-white/90'}`}
                   style={{ width: LABEL_WIDTH }}>
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center bg-amber-500/15">
-                    <Waveform className="w-3 h-3 text-amber-500" weight="bold" />
+                  <div className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors ${isPlaying ? 'bg-amber-500/30 animate-pulse' : 'bg-amber-500/15'}`}>
+                    <Waveform className={`w-3 h-3 ${isPlaying ? 'text-amber-400' : 'text-amber-500'}`} weight="bold" />
                   </div>
-                  <span className={`text-[7px] font-bold mt-0.5 ${d ? 'text-zinc-500' : 'text-zinc-400'}`}>BG</span>
+                  <span className={`text-[7px] font-bold mt-0.5 ${isPlaying ? (d ? 'text-amber-400' : 'text-amber-600') : (d ? 'text-zinc-500' : 'text-zinc-400')}`}>
+                    {isPlaying ? 'Playing' : 'BG'}
+                  </span>
                 </div>
                 {/* BG bar with fake waveform */}
                 <div className={`absolute rounded-md border ${d ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-400/10 border-amber-400/20'}`}
@@ -300,13 +335,11 @@ const TimelineEditor = ({
           })()}
 
           {/* Playhead line */}
-          {videoCurrentTime > 0 && (
-            <div className="absolute top-0 w-0.5 bg-red-500 z-40 pointer-events-none"
-              style={{ left: playheadX, height: totalHeight }}
-              data-testid="timeline-playhead">
-              <div className="w-3 h-3 bg-red-500 rounded-full absolute -left-[5px] -top-1 shadow-md" />
-            </div>
-          )}
+          <div className={`absolute top-0 w-0.5 z-40 pointer-events-none transition-colors ${isPlaying ? 'bg-red-500' : 'bg-red-400/70'}`}
+            style={{ left: playheadX, height: totalHeight }}
+            data-testid="timeline-playhead">
+            <div className={`w-3 h-3 rounded-full absolute -left-[5px] -top-1 shadow-md transition-colors ${isPlaying ? 'bg-red-500' : 'bg-red-400/70'}`} />
+          </div>
         </div>
       </div>
     </div>
