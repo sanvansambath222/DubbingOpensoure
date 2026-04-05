@@ -423,27 +423,43 @@ def detect_speakers_audio(audio_path: str, segments: list) -> list:
                     segments[i]["speaker"] = segments[neighbor]["speaker"]
                     break
 
-    # Gender detection per speaker using average pitch
+    # Gender detection per speaker using multiple pitch samples (weighted by segment duration)
     speaker_pitches = {}
     for i, seg in enumerate(segments):
         spk = seg["speaker"]
         if pitches[i] is not None:
             if spk not in speaker_pitches:
                 speaker_pitches[spk] = []
-            speaker_pitches[spk].append(pitches[i])
+            # Weight by segment duration for better accuracy
+            duration = max(0.1, (seg.get("end", 0) - seg.get("start", 0)))
+            speaker_pitches[spk].append((pitches[i], duration))
 
     speaker_gender = {}
     for spk, plist in speaker_pitches.items():
-        # Remove outliers (keep middle 60%)
-        plist.sort()
-        trim = max(1, len(plist) // 5)
-        trimmed = plist[trim:-trim] if len(plist) > 4 else plist
-        avg_pitch = sum(trimmed) / len(trimmed) if trimmed else 180
-        median_pitch = trimmed[len(trimmed) // 2] if trimmed else 180
-        # Use median for more robust detection
-        # Male: ~85-175 Hz, Female: ~175-300 Hz
-        speaker_gender[spk] = "male" if median_pitch < 175 else "female"
-        logger.info(f"{spk}: avg={avg_pitch:.0f}Hz median={median_pitch:.0f}Hz → {speaker_gender[spk]}")
+        # Weighted median: longer segments are more reliable
+        plist.sort(key=lambda x: x[0])
+        total_weight = sum(w for _, w in plist)
+        cumulative = 0
+        weighted_median = plist[len(plist) // 2][0]
+        for pitch, weight in plist:
+            cumulative += weight
+            if cumulative >= total_weight / 2:
+                weighted_median = pitch
+                break
+        # Also compute weighted average
+        weighted_avg = sum(p * w for p, w in plist) / total_weight if total_weight > 0 else 180
+        # Use weighted median for robust detection
+        # Male: ~85-175 Hz, Female: ~165-300 Hz (slightly overlapping zone 165-175)
+        # If in overlap zone, use weighted average as tiebreaker
+        if weighted_median < 165:
+            gender = "male"
+        elif weighted_median > 185:
+            gender = "female"
+        else:
+            # Overlap zone — use average as tiebreaker
+            gender = "male" if weighted_avg < 175 else "female"
+        speaker_gender[spk] = gender
+        logger.info(f"{spk}: samples={len(plist)} w_median={weighted_median:.0f}Hz w_avg={weighted_avg:.0f}Hz → {gender}")
 
     # Apply gender and voice to all segments
     # Also use GPT role names as backup gender hint
@@ -3237,6 +3253,64 @@ async def _run_auto_process(project_id, auth_header):
                 queue_status[project_id].update({"step": "translating", "progress": 1, "total": 2})
                 await translate_segments(project_id, target_language=project.get("target_language", "km"), authorization=auth_header)
                 project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+            
+            # Step 2.5: GPT gender refinement — analyze speech content to confirm boy/girl
+            try:
+                segs = project.get("segments", [])
+                speakers = {}
+                for s in segs:
+                    spk = s.get("speaker", "")
+                    if spk not in speakers:
+                        speakers[spk] = {"lines": [], "current_gender": s.get("gender", "female")}
+                    if len(speakers[spk]["lines"]) < 5:
+                        speakers[spk]["lines"].append(s.get("original", "")[:80])
+                
+                if speakers:
+                    from emergentintegrations.llm.chat import LlmChat, UserMessage
+                    chat = LlmChat(
+                        api_key=EMERGENT_LLM_KEY,
+                        session_id=f"gender_detect_{project_id}",
+                        system_message="You are a gender detection expert. Given speech lines from different speakers, determine if each speaker is male or female based on speech content, context, and conversational clues. Reply ONLY in format: SPEAKER_XX=male or SPEAKER_XX=female (one per line)."
+                    )
+                    chat.with_model("openai", "gpt-5.2")
+                    prompt_lines = []
+                    for spk, data in speakers.items():
+                        lines_text = " | ".join(data["lines"])
+                        prompt_lines.append(f"{spk} (pitch says {data['current_gender']}): {lines_text}")
+                    
+                    gpt_result = await chat.send_message(UserMessage(text="\n".join(prompt_lines)))
+                    
+                    # Parse GPT response
+                    gpt_genders = {}
+                    for line in gpt_result.strip().split("\n"):
+                        line = line.strip()
+                        if "=" in line:
+                            parts = line.split("=")
+                            spk_name = parts[0].strip()
+                            g = parts[1].strip().lower()
+                            if g in ("male", "female"):
+                                gpt_genders[spk_name] = g
+                    
+                    # Apply GPT gender corrections
+                    if gpt_genders:
+                        updated = False
+                        for seg in segs:
+                            spk = seg.get("speaker", "")
+                            if spk in gpt_genders:
+                                new_gender = gpt_genders[spk]
+                                if seg.get("gender") != new_gender:
+                                    seg["gender"] = new_gender
+                                    seg["voice"] = "dara" if new_gender == "male" else "sophea"
+                                    updated = True
+                        if updated:
+                            await db.projects.update_one(
+                                {"project_id": project_id},
+                                {"$set": {"segments": segs, "updated_at": datetime.now(timezone.utc).isoformat()}}
+                            )
+                            logger.info(f"GPT gender refinement applied: {gpt_genders}")
+                        project = await db.projects.find_one({"project_id": project_id}, {"_id": 0})
+            except Exception as e:
+                logger.warning(f"GPT gender refinement failed (non-critical): {e}")
             
             # STOP HERE - let user review voices before generating audio
             import asyncio as _asyncio
