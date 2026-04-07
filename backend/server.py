@@ -3480,23 +3480,6 @@ async def get_queue_status():
     }
 
 # Auto-process: transcribe + translate + generate audio in one call
-@api_router.post("/projects/{project_id}/auto-process")
-async def auto_process(project_id: str, speed: int = Query(2), target_language: str = Query("km"), bg_volume: int = Query(0), authorization: str = Header(None)):
-    from emergentintegrations.llm.openai import OpenAISpeechToText
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    
-    user = await get_current_user(authorization)
-    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if not project.get("original_file_path"):
-        raise HTTPException(status_code=400, detail="No file uploaded")
-    
-    # Prevent double-click: skip if already processing
-    qs = queue_status.get(project_id, {})
-    if qs.get("status") == "processing":
-        return {"status": "processing", "message": "Already processing. Please wait..."}
-
 # Get/Set processing mode (FREE local vs PAID cloud)
 @api_router.get("/settings/processing-mode")
 async def get_processing_mode():
@@ -3520,6 +3503,23 @@ async def set_processing_mode(req: ProcessingModeReq, authorization: str = Heade
         USE_LOCAL_TRANSLATE = req.use_local_translate
     logger.info(f"Processing mode updated: whisper={'local' if USE_LOCAL_WHISPER else 'cloud'}, translate={'local' if USE_LOCAL_TRANSLATE else 'cloud'}")
     return {"use_local_whisper": USE_LOCAL_WHISPER, "use_local_translate": USE_LOCAL_TRANSLATE}
+
+@api_router.post("/projects/{project_id}/auto-process")
+async def auto_process(project_id: str, speed: int = Query(2), target_language: str = Query("km"), bg_volume: int = Query(0), authorization: str = Header(None)):
+    from emergentintegrations.llm.openai import OpenAISpeechToText
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    
+    user = await get_current_user(authorization)
+    project = strip_oid(await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}))
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.get("original_file_path"):
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    # Prevent double-click: skip if already processing
+    qs = queue_status.get(project_id, {})
+    if qs.get("status") == "processing":
+        return {"status": "processing", "message": "Already processing. Please wait..."}
 
     if qs.get("status") == "queued":
         pos = qs.get("position", 0)
