@@ -40,7 +40,7 @@ GOOGLE_TTS_SYNTHESIZE_URL = "https://texttospeech.googleapis.com/v1/text:synthes
 GOOGLE_TTS_VOICES_URL = "https://texttospeech.googleapis.com/v1/voices"
 
 APP_NAME = "voxidub"
-LOCAL_STORAGE_DIR = Path("/app/uploads")
+LOCAL_STORAGE_DIR = Path(os.environ.get("UPLOAD_DIR", Path(__file__).parent / "uploads"))
 LOCAL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Open-source local models (FREE mode)
