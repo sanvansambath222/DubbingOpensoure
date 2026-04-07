@@ -2001,7 +2001,7 @@ async def transcribe_segments(project_id: str, authorization: str = Header(None)
                 # Convert to same format as OpenAI Whisper
                 raw_segments = []
                 for seg in fw_segments:
-                    raw_segments.append(type('Seg', (), {"start": seg.start, "end": seg.end, "text": seg.text.strip()})())
+                    raw_segments.append({"start": seg.start, "end": seg.end, "text": seg.text.strip()})
             else:
                 # PAID: Use OpenAI Whisper API via Emergent key
                 logger.info("Using OpenAI Whisper API (paid)")
