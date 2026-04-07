@@ -66,10 +66,10 @@ def get_local_whisper():
 def get_local_nllb():
     global _local_nllb_pipeline, _local_nllb_tokenizer
     if _local_nllb_pipeline is None:
-        from transformers import AutoTokenizer, pipeline as hf_pipeline
+        from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
         logger.info(f"Loading NLLB translation model: {NLLB_MODEL}...")
         _local_nllb_tokenizer = AutoTokenizer.from_pretrained(NLLB_MODEL)
-        _local_nllb_pipeline = hf_pipeline("translation", model=NLLB_MODEL, tokenizer=_local_nllb_tokenizer, max_length=512, device=-1)
+        _local_nllb_pipeline = AutoModelForSeq2SeqLM.from_pretrained(NLLB_MODEL)
         logger.info("NLLB translation model loaded!")
     return _local_nllb_pipeline, _local_nllb_tokenizer
 
@@ -2149,14 +2149,18 @@ async def translate_segments(project_id: str, target_language: str = Query("km")
             tgt_code = NLLB_LANG_CODES.get(target_language, "khm_Khmr")
             
             def _translate_batch_nllb(texts, src, tgt):
-                pipe, tok = get_local_nllb()
+                model, tok = get_local_nllb()
                 results = []
                 for text in texts:
                     if not text.strip():
                         results.append("")
                         continue
-                    out = pipe(text, src_lang=src, tgt_lang=tgt)
-                    results.append(out[0]["translation_text"])
+                    tok.src_lang = src
+                    inputs = tok(text, return_tensors="pt", max_length=512, truncation=True)
+                    forced_bos_id = tok.convert_tokens_to_ids(tgt)
+                    generated = model.generate(**inputs, forced_bos_token_id=forced_bos_id, max_new_tokens=512)
+                    result = tok.batch_decode(generated, skip_special_tokens=True)[0]
+                    results.append(result)
                 return results
             
             # Process in batches of 10 via executor
