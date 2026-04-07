@@ -59,7 +59,10 @@ Build a video/audio dubbing platform with AI transcription, translation, TTS voi
 - [x] **Download Script TXT** — Export all segments as TXT with speaker roles (Father/Wife/Doctor), gender, timestamps, original + translated text. Professional dubbing script format. (2026-04-05)
 - [x] **Import CSV + MP3 Voices** — Upload CSV mapping (line→mp3_file→speaker) + multiple MP3 files. Backend validates duration, assigns to correct segments. Bulk voice import for professional workflow. (2026-04-05)
 
+- [x] **100% FREE Local AI Mode** — faster-whisper (local transcription) + NLLB-200 (local translation) + F0 pitch gender (local). Toggle between FREE and Cloud API with one button. $0/month cost. (2026-04-07)
+
 ## Upcoming Tasks
+- [ ] Pre-download NLLB-200 model on Azure VM (first run downloads ~1GB) — P0
 - [ ] ABA PayWay Payment Integration (blocked: waiting for sandbox API keys from user) — P1
 - [ ] Install `faster-whisper` locally to replace OpenAI Whisper API — P2
 - [ ] Refactor server.py (~4200 lines → split into routes/services) — P1

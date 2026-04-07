@@ -66,6 +66,7 @@ const Editor = () => {
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
+  const [processingMode, setProcessingMode] = useState('free');
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordTimerRef = useRef(null);
@@ -113,6 +114,11 @@ const Editor = () => {
   }, [projectId, token, navigate, loadFile]);
 
   useEffect(() => { fetchProject(); }, [fetchProject]);
+  useEffect(() => {
+    axios.get(`${API}/settings/processing-mode`).then(r => {
+      setProcessingMode(r.data.use_local_whisper && r.data.use_local_translate ? 'free' : 'cloud');
+    }).catch(() => {});
+  }, []);
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -959,11 +965,32 @@ const Editor = () => {
             </div>
 
             {project?.original_filename && !audioUrl && !segments.some(s => s.translated) && (
-              <button onClick={autoProcess} disabled={!!processingMsg} data-testid="auto-process-btn"
-                className="w-full py-3 bg-gradient-to-r from-cyan-500/15 to-blue-500/15 border border-zinc-950/20 text-zinc-700 text-xs font-semibold rounded-sm hover:from-cyan-500/25 hover:to-blue-500/25 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
-                <Spinner className={`w-3.5 h-3.5 ${processingMsg ? 'animate-spin' : ''}`} />
-                {processingMsg ? 'Processing...' : 'Auto Process (Detect → Translate)'}
-              </button>
+              <div className="space-y-2">
+                {/* Processing Mode Badge */}
+                <div className={`flex items-center justify-between px-3 py-2 rounded-sm text-[10px] border ${d ? 'bg-zinc-800/50 border-zinc-700' : 'bg-zinc-50 border-zinc-200'}`}
+                  data-testid="processing-mode-badge">
+                  <span className={`font-bold uppercase tracking-wider ${d ? 'text-zinc-400' : 'text-zinc-500'}`}>Mode</span>
+                  <span className={`font-bold px-2 py-0.5 rounded-full ${processingMode === 'free' ? 'bg-emerald-500/15 text-emerald-500' : 'bg-cyan-500/15 text-cyan-500'}`}>
+                    {processingMode === 'free' ? 'FREE (Local AI)' : 'Cloud API'}
+                  </span>
+                  <button onClick={() => {
+                    const newMode = processingMode === 'free' ? 'cloud' : 'free';
+                    setProcessingMode(newMode);
+                    axios.post(`${API}/settings/processing-mode`, {
+                      use_local_whisper: newMode === 'free',
+                      use_local_translate: newMode === 'free'
+                    }, { headers: { Authorization: `Bearer ${token}` } });
+                  }} data-testid="toggle-mode-btn"
+                    className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors ${d ? 'border-zinc-600 text-zinc-400 hover:text-white hover:border-zinc-400' : 'border-zinc-300 text-zinc-500 hover:text-zinc-700 hover:border-zinc-500'}`}>
+                    Switch
+                  </button>
+                </div>
+                <button onClick={autoProcess} disabled={!!processingMsg} data-testid="auto-process-btn"
+                  className="w-full py-3 bg-gradient-to-r from-cyan-500/15 to-blue-500/15 border border-zinc-950/20 text-zinc-700 text-xs font-semibold rounded-sm hover:from-cyan-500/25 hover:to-blue-500/25 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
+                  <Spinner className={`w-3.5 h-3.5 ${processingMsg ? 'animate-spin' : ''}`} />
+                  {processingMsg ? 'Processing...' : 'Auto Process (Detect → Translate)'}
+                </button>
+              </div>
             )}
 
             {segments.some(s => s.translated) && !audioUrl && (

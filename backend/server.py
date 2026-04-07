@@ -43,6 +43,45 @@ APP_NAME = "voxidub"
 LOCAL_STORAGE_DIR = Path("/app/uploads")
 LOCAL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
+# Open-source local models (FREE mode)
+USE_LOCAL_WHISPER = os.environ.get('USE_LOCAL_WHISPER', 'true').lower() == 'true'
+USE_LOCAL_TRANSLATE = os.environ.get('USE_LOCAL_TRANSLATE', 'true').lower() == 'true'
+WHISPER_MODEL_SIZE = os.environ.get('WHISPER_MODEL_SIZE', 'base')  # tiny, base, small, medium, large-v3
+NLLB_MODEL = os.environ.get('NLLB_MODEL', 'facebook/nllb-200-distilled-600M')
+
+# Lazy-loaded local models
+_local_whisper_model = None
+_local_nllb_pipeline = None
+_local_nllb_tokenizer = None
+
+def get_local_whisper():
+    global _local_whisper_model
+    if _local_whisper_model is None:
+        from faster_whisper import WhisperModel
+        logger.info(f"Loading faster-whisper model: {WHISPER_MODEL_SIZE}...")
+        _local_whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device="cpu", compute_type="int8")
+        logger.info("faster-whisper model loaded!")
+    return _local_whisper_model
+
+def get_local_nllb():
+    global _local_nllb_pipeline, _local_nllb_tokenizer
+    if _local_nllb_pipeline is None:
+        from transformers import AutoTokenizer, pipeline as hf_pipeline
+        logger.info(f"Loading NLLB translation model: {NLLB_MODEL}...")
+        _local_nllb_tokenizer = AutoTokenizer.from_pretrained(NLLB_MODEL)
+        _local_nllb_pipeline = hf_pipeline("translation", model=NLLB_MODEL, tokenizer=_local_nllb_tokenizer, max_length=512, device=-1)
+        logger.info("NLLB translation model loaded!")
+    return _local_nllb_pipeline, _local_nllb_tokenizer
+
+# NLLB language code mapping
+NLLB_LANG_CODES = {
+    "km": "khm_Khmr", "th": "tha_Thai", "vi": "vie_Latn", "lo": "lao_Laoo",
+    "my": "mya_Mymr", "zh": "zho_Hans", "en": "eng_Latn", "ja": "jpn_Jpan",
+    "ko": "kor_Hang", "fr": "fra_Latn", "es": "spa_Latn", "de": "deu_Latn",
+    "ru": "rus_Cyrl", "ar": "arb_Arab", "hi": "hin_Deva", "id": "ind_Latn",
+    "ms": "zsm_Latn", "tl": "tgl_Latn", "pt": "por_Latn", "it": "ita_Latn",
+}
+
 # Background task queue
 processing_queue = asyncio.Queue()
 queue_status = {}  # project_id -> {"position": int, "status": str, "step": str, "progress": int, "total": int, "started_at": float}
@@ -1943,22 +1982,36 @@ async def transcribe_segments(project_id: str, authorization: str = Header(None)
             result = subprocess.run(cmd, capture_output=True)
             if result.returncode != 0 or not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
                 logger.error(f"FFmpeg audio extraction failed: {result.stderr[:300] if result.stderr else 'no output'}")
-                # Try alternate extraction method
                 cmd2 = ["ffmpeg", "-y", "-i", input_path, "-vn", "-ar", "16000", "-ac", "1", "-f", "wav", audio_path]
                 result2 = subprocess.run(cmd2, capture_output=True)
                 if result2.returncode != 0 or not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
                     raise HTTPException(status_code=500, detail=f"Failed to extract audio from video. File may be corrupted or unsupported format.")
 
-            stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
-            with open(audio_path, "rb") as audio_file:
-                response = await stt.transcribe(file=audio_file, model="whisper-1", response_format="verbose_json")
-
-            # Auto-detect language from Whisper response
-            detected_lang = getattr(response, 'language', None) or 'zh'
-            detected_lang_name = LANGUAGE_NAMES.get(detected_lang, detected_lang)
-            logger.info(f"Auto-detected language: {detected_lang} ({detected_lang_name})")
-
-            raw_segments = response.segments if hasattr(response, 'segments') else []
+            if USE_LOCAL_WHISPER:
+                # FREE: Use faster-whisper (local, no API cost)
+                logger.info("Using faster-whisper (local, FREE)")
+                model = await asyncio.get_event_loop().run_in_executor(None, get_local_whisper)
+                fw_segments, fw_info = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: model.transcribe(audio_path, beam_size=5, language=None, vad_filter=True)
+                )
+                fw_segments = list(fw_segments)
+                detected_lang = fw_info.language or 'zh'
+                detected_lang_name = LANGUAGE_NAMES.get(detected_lang, detected_lang)
+                logger.info(f"faster-whisper detected language: {detected_lang} ({detected_lang_name})")
+                # Convert to same format as OpenAI Whisper
+                raw_segments = []
+                for seg in fw_segments:
+                    raw_segments.append(type('Seg', (), {"start": seg.start, "end": seg.end, "text": seg.text.strip()})())
+            else:
+                # PAID: Use OpenAI Whisper API via Emergent key
+                logger.info("Using OpenAI Whisper API (paid)")
+                stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+                with open(audio_path, "rb") as audio_file:
+                    response = await stt.transcribe(file=audio_file, model="whisper-1", response_format="verbose_json")
+                detected_lang = getattr(response, 'language', None) or 'zh'
+                detected_lang_name = LANGUAGE_NAMES.get(detected_lang, detected_lang)
+                logger.info(f"Auto-detected language: {detected_lang} ({detected_lang_name})")
+                raw_segments = response.segments if hasattr(response, 'segments') else []
             
             # Step 1: Merge short segments into natural sentences
             merged = merge_whisper_segments(raw_segments)
@@ -2089,47 +2142,78 @@ async def translate_segments(project_id: str, target_language: str = Query("km")
         import time as _time
         queue_status[project_id] = {"status": "processing", "step": "translating", "progress": 0, "total": len(segments), "started_at": _time.time()}
         
-        # Parallel chunk translation for speed
-        chunks = []
-        for chunk_start in range(0, len(segments), TRANSLATE_CHUNK_SIZE):
-            chunk_end = min(chunk_start + TRANSLATE_CHUNK_SIZE, len(segments))
-            chunks.append((chunk_start, chunk_end, segments[chunk_start:chunk_end]))
+        if USE_LOCAL_TRANSLATE:
+            # FREE: Use NLLB-200 (local, no API cost)
+            logger.info(f"Using NLLB-200 (local, FREE) for {detected_lang} → {target_language}")
+            src_code = NLLB_LANG_CODES.get(detected_lang, "zho_Hans")
+            tgt_code = NLLB_LANG_CODES.get(target_language, "khm_Khmr")
+            
+            def _translate_batch_nllb(texts, src, tgt):
+                pipe, tok = get_local_nllb()
+                results = []
+                for text in texts:
+                    if not text.strip():
+                        results.append("")
+                        continue
+                    out = pipe(text, src_lang=src, tgt_lang=tgt)
+                    results.append(out[0]["translation_text"])
+                return results
+            
+            # Process in batches of 10 via executor
+            batch_size = 10
+            for batch_start in range(0, len(segments), batch_size):
+                batch_end = min(batch_start + batch_size, len(segments))
+                texts = [s.get("original", "") for s in segments[batch_start:batch_end]]
+                translated = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda t=texts: _translate_batch_nllb(t, src_code, tgt_code)
+                )
+                for i, trans in enumerate(translated):
+                    segments[batch_start + i]["translated"] = trans
+                queue_status[project_id]["progress"] = batch_end
+                logger.info(f"NLLB translation: {batch_end}/{len(segments)}")
+        else:
+            # PAID: Use GPT-5.2 via Emergent key
+            logger.info(f"Using GPT-5.2 (paid) for {detected_lang} → {target_language}")
+            # Parallel chunk translation for speed
+            chunks = []
+            for chunk_start in range(0, len(segments), TRANSLATE_CHUNK_SIZE):
+                chunk_end = min(chunk_start + TRANSLATE_CHUNK_SIZE, len(segments))
+                chunks.append((chunk_start, chunk_end, segments[chunk_start:chunk_end]))
         
-        async def translate_chunk(chunk_start, chunk_end, chunk):
-            chat = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"translate_seg_{project_id}_{uuid.uuid4().hex[:6]}",
-                system_message=f"""You are a {source_lang_name} to {target_lang_name} translator. Translate each numbered {source_lang_name} line to {target_lang_name}.
+            async def translate_chunk(chunk_start, chunk_end, chunk):
+                chat = LlmChat(
+                    api_key=EMERGENT_LLM_KEY,
+                    session_id=f"translate_seg_{project_id}_{uuid.uuid4().hex[:6]}",
+                    system_message=f"""You are a {source_lang_name} to {target_lang_name} translator. Translate each numbered {source_lang_name} line to {target_lang_name}.
 Return translations in exact same format: number followed by {target_lang_name} translation.
 Only output translations, nothing else."""
-            )
-            chat.with_model("openai", "gpt-5.2")
-            input_text = "\n".join([f"{i}: {s['original']}" for i, s in enumerate(chunk)])
-            translations = await chat.send_message(UserMessage(text=input_text))
-            results = {}
-            lines = translations.strip().split("\n")
-            for line in lines:
-                if ":" in line:
-                    try:
-                        idx_str, trans = line.split(":", 1)
-                        idx = int(idx_str.strip())
-                        if idx < len(chunk):
-                            results[chunk_start + idx] = trans.strip()
-                    except (ValueError, IndexError):
-                        pass
-            return results
-        
-        # Run up to 3 translation chunks in parallel
-        PARALLEL_TRANSLATE = 3
-        for batch_start in range(0, len(chunks), PARALLEL_TRANSLATE):
-            batch = chunks[batch_start:batch_start + PARALLEL_TRANSLATE]
-            results = await asyncio.gather(*[translate_chunk(cs, ce, ch) for cs, ce, ch in batch])
-            for result_dict in results:
-                for idx, trans in result_dict.items():
-                    segments[idx]["translated"] = trans
-            done_count = min((batch_start + PARALLEL_TRANSLATE) * TRANSLATE_CHUNK_SIZE, len(segments))
-            queue_status[project_id]["progress"] = done_count
-            logger.info(f"Translation parallel batch done: {done_count}/{len(segments)}")
+                )
+                chat.with_model("openai", "gpt-5.2")
+                input_text = "\n".join([f"{i}: {s['original']}" for i, s in enumerate(chunk)])
+                translations = await chat.send_message(UserMessage(text=input_text))
+                results = {}
+                lines = translations.strip().split("\n")
+                for line in lines:
+                    if ":" in line:
+                        try:
+                            idx_str, trans = line.split(":", 1)
+                            idx = int(idx_str.strip())
+                            if idx < len(chunk):
+                                results[chunk_start + idx] = trans.strip()
+                        except (ValueError, IndexError):
+                            pass
+                return results
+            
+            PARALLEL_TRANSLATE = 3
+            for batch_start in range(0, len(chunks), PARALLEL_TRANSLATE):
+                batch = chunks[batch_start:batch_start + PARALLEL_TRANSLATE]
+                results = await asyncio.gather(*[translate_chunk(cs, ce, ch) for cs, ce, ch in batch])
+                for result_dict in results:
+                    for idx, trans in result_dict.items():
+                        segments[idx]["translated"] = trans
+                done_count = min((batch_start + PARALLEL_TRANSLATE) * TRANSLATE_CHUNK_SIZE, len(segments))
+                queue_status[project_id]["progress"] = done_count
+                logger.info(f"Translation parallel batch done: {done_count}/{len(segments)}")
         await db.projects.update_one(
             {"project_id": project_id},
             {"$set": {
@@ -3408,6 +3492,31 @@ async def auto_process(project_id: str, speed: int = Query(2), target_language: 
     qs = queue_status.get(project_id, {})
     if qs.get("status") == "processing":
         return {"status": "processing", "message": "Already processing. Please wait..."}
+
+# Get/Set processing mode (FREE local vs PAID cloud)
+@api_router.get("/settings/processing-mode")
+async def get_processing_mode():
+    return {
+        "use_local_whisper": USE_LOCAL_WHISPER,
+        "use_local_translate": USE_LOCAL_TRANSLATE,
+        "whisper_model": WHISPER_MODEL_SIZE,
+        "nllb_model": NLLB_MODEL,
+    }
+
+class ProcessingModeReq(BaseModel):
+    use_local_whisper: bool = None
+    use_local_translate: bool = None
+
+@api_router.post("/settings/processing-mode")
+async def set_processing_mode(req: ProcessingModeReq, authorization: str = Header(None)):
+    global USE_LOCAL_WHISPER, USE_LOCAL_TRANSLATE
+    if req.use_local_whisper is not None:
+        USE_LOCAL_WHISPER = req.use_local_whisper
+    if req.use_local_translate is not None:
+        USE_LOCAL_TRANSLATE = req.use_local_translate
+    logger.info(f"Processing mode updated: whisper={'local' if USE_LOCAL_WHISPER else 'cloud'}, translate={'local' if USE_LOCAL_TRANSLATE else 'cloud'}")
+    return {"use_local_whisper": USE_LOCAL_WHISPER, "use_local_translate": USE_LOCAL_TRANSLATE}
+
     if qs.get("status") == "queued":
         pos = qs.get("position", 0)
         return {"status": "queued", "position": pos, "message": f"In queue. Position: #{pos}"}
