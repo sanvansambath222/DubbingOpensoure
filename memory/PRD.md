@@ -62,10 +62,10 @@ Build a video/audio dubbing platform with AI transcription, translation, TTS voi
 - [x] **100% FREE Local AI Mode** — faster-whisper (local transcription) + NLLB-200 (local translation) + F0 pitch gender (local). Toggle between FREE and Cloud API with one button. $0/month cost. (2026-04-07)
 
 ## Upcoming Tasks
+- [x] Fix Python 3.12 deployment — removed `klea`, fixed `numpy==1.26.4` (2026-04-08)
 - [ ] Pre-download NLLB-200 model on Azure VM (first run downloads ~1GB) — P0
 - [ ] ABA PayWay Payment Integration (blocked: waiting for sandbox API keys from user) — P1
-- [ ] Install `faster-whisper` locally to replace OpenAI Whisper API — P2
-- [ ] Refactor server.py (~4200 lines → split into routes/services) — P1
+- [ ] Refactor server.py (~4500 lines → split into routes/services) — P1
 - [ ] Mobile-friendly layout tweaks — P2
 - [ ] Export different video qualities — P2
 - [ ] Nginx/Cloudflare setup — P2
