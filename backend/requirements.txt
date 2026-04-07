@@ -121,7 +121,7 @@ munkres==1.1.4
 namex==0.1.0
 networkx==3.6.1
 numba==0.65.0
-numpy==1.26.4
+numpy>=2.0,<2.5
 oauthlib==3.3.1
 omegaconf==2.3.0
 onnxruntime==1.24.4
